@@ -1,0 +1,33 @@
+{
+  "name": "swiftfetch",
+  "productName": "SwiftFetch",
+  "version": "0.1.0",
+  "description": "Open-source segmented download manager with pause/resume, queue and browser integration",
+  "main": "electron/main.js",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build:renderer": "vite build",
+    "build": "vite build && electron-builder",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "vite": "^5.4.11"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "build": {
+    "appId": "com.swiftfetch.app",
+    "productName": "SwiftFetch",
+    "directories": { "output": "release" },
+    "files": ["dist/**", "electron/**", "package.json"],
+    "win": { "target": ["nsis"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}

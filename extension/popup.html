@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root { color-scheme: dark; }
+      body { width: 340px; margin: 0; font: 13px "Segoe UI", system-ui, sans-serif; background: #0f1115; color: #e6e9ef; }
+      header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #161a22; border-bottom: 1px solid #262c38; }
+      header b { flex: 1; font-size: 14px; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff6b6b; }
+      .dot.on { background: #3ccf7a; box-shadow: 0 0 6px #3ccf7a; }
+      section { padding: 10px 12px; border-bottom: 1px solid #262c38; }
+      label { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: #c9cfdb; }
+      input[type="number"] { width: 70px; background: #0f1115; color: inherit; border: 1px solid #262c38; border-radius: 5px; padding: 3px 6px; }
+      h4 { margin: 0 0 6px; font-size: 12px; color: #8b93a7; text-transform: uppercase; letter-spacing: .4px; }
+      .media { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #1c212b; }
+      .media:first-of-type { border-top: 0; }
+      .media .info { flex: 1; min-width: 0; }
+      .media .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .media .meta { color: #8b93a7; font-size: 11px; }
+      button { background: #4f8cff; color: #fff; border: 0; border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+      button:hover { background: #7fb0ff; }
+      button.sec { background: #1c212b; border: 1px solid #262c38; }
+      .empty { color: #8b93a7; }
+      .msg { color: #8b93a7; font-size: 12px; padding: 8px 12px; min-height: 14px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="dot" id="dot"></span>
+      <b>SwiftFetch</b>
+      <span id="appState" style="color:#8b93a7">checking…</span>
+    </header>
+
+    <section>
+      <label><input type="checkbox" id="enabled" /> Capture browser downloads</label>
+      <label>App port <input type="number" id="port" min="1024" max="65535" /></label>
+      <label>Skip files smaller than <input type="number" id="minSize" min="0" step="64" /> KB</label>
+    </section>
+
+    <section>
+      <h4>Media on this page</h4>
+      <div id="media"><span class="empty">Nothing detected yet. Play a video and reopen this popup.</span></div>
+    </section>
+
+    <section>
+      <button class="sec" id="dlPage">Download current page URL</button>
+    </section>
+    <div class="msg" id="msg"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
