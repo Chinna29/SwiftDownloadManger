@@ -60,6 +60,29 @@ function icon(x, y, s) {
   return [79, 140, 255, 255];
 }
 
+/** Windows .ico container with PNG-compressed entries (supported since Vista). */
+function ico(pngs) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(pngs.length, 4);
+  const entries = [];
+  let offset = 6 + 16 * pngs.length;
+  for (const { size, data } of pngs) {
+    const e = Buffer.alloc(16);
+    e[0] = size >= 256 ? 0 : size;
+    e[1] = size >= 256 ? 0 : size;
+    e[2] = 0; e[3] = 0;
+    e.writeUInt16LE(1, 4);
+    e.writeUInt16LE(32, 6);
+    e.writeUInt32LE(data.length, 8);
+    e.writeUInt32LE(offset, 12);
+    offset += data.length;
+    entries.push(e);
+  }
+  return Buffer.concat([header, ...entries, ...pngs.map((p) => p.data)]);
+}
+
 const root = path.join(__dirname, '..');
 const outs = [
   [16, 'extension/icons/icon16.png'],
@@ -68,9 +91,14 @@ const outs = [
   [128, 'extension/icons/icon128.png'],
   [256, 'build/icon.png'],
 ];
+const made = {};
 for (const [size, rel] of outs) {
   const p = path.join(root, rel);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, png(size, icon));
+  made[size] = png(size, icon);
+  fs.writeFileSync(p, made[size]);
   console.log('wrote', rel);
 }
+const icoPath = path.join(root, 'build', 'icon.ico');
+fs.writeFileSync(icoPath, ico([16, 32, 48, 256].map((s) => ({ size: s, data: made[s] }))));
+console.log('wrote build/icon.ico');

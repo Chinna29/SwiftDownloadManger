@@ -27,8 +27,19 @@ export default function AddDialog({ settings, onClose }) {
   const [tools, setTools] = useState(null);
   const [install, setInstall] = useState(null);
 
+  const [target, setTarget] = useState(null);
   const urlRef = useRef(null);
   const probeSeq = useRef(0);
+
+  // Preview where the file will land once routing by category is applied.
+  useEffect(() => {
+    const kind = mode === 'video' && video ? 'video' : 'file';
+    const name = kind === 'video' ? (video?.title || '') : (filename || info?.filename || '');
+    if (!dir || (!name && !info)) { setTarget(null); return; }
+    let alive = true;
+    sf.jobs.targetDir({ dir, filename: name, contentType: info?.contentType, kind, quality }).then((t) => { if (alive) setTarget(t); });
+    return () => { alive = false; };
+  }, [dir, filename, info, mode, video, quality]);
 
   useEffect(() => {
     sf.clipboardUrl().then((u) => { if (u) setUrl(u); });
@@ -189,6 +200,9 @@ export default function AddDialog({ settings, onClose }) {
             <input value={dir} onChange={(e) => setDir(e.target.value)} spellCheck={false} />
             <button type="button" onClick={browse}>Browse…</button>
           </div>
+          {target && target.dir !== dir && (
+            <span className="dim small">Saves to <span className="mono">{target.dir}</span> ({target.category})</span>
+          )}
         </label>
 
         {mode === 'file' && (

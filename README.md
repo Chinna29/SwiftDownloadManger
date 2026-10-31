@@ -22,6 +22,11 @@ Built with Electron, Node.js and React. Everything in the stack is free and open
   quality or audio-only, and the app runs the bundled yt-dlp as a job with live progress, pause,
   resume and cancel. yt-dlp, Deno (its JavaScript runtime) and ffmpeg are downloaded on demand
   from their official GitHub releases into the app's data folder; nothing is installed system-wide.
+- **Organized folders.** Downloads go to `Downloads\SwiftDM` and are sorted into `Videos`,
+  `Audio`, `Images` and `Files` by extension or content type (editable in Settings → Folders).
+  Pick a different folder in the Add dialog and it is used as-is.
+- **Tray and startup.** Closing the window keeps SwiftFetch in the tray (pause/resume all, add
+  from clipboard, quit). It can start with Windows, minimized to the tray.
 - **Desktop notifications** when a download finishes.
 
 ## Run from source
@@ -32,6 +37,17 @@ npm run dev
 ```
 
 `npm run dev` starts the Vite dev server and opens Electron against it with hot reload.
+
+## Launch without a terminal
+
+```bash
+npm run shortcut
+```
+
+Builds the renderer and creates **SwiftFetch** shortcuts on the Desktop and in the Start Menu
+that launch the app directly from this checkout. `swiftfetch.cmd` in the project root does the
+same from a shell. Settings → System has the same "Create shortcuts" button, plus **Start
+SwiftFetch when Windows starts** and **Keep running in the tray**.
 
 ## Build an installer
 
@@ -81,12 +97,15 @@ electron/
   engine/downloader.js Segmented download with resume state
   engine/queue.js      Job list, scheduling, persistence
   engine/limiter.js    Token-bucket speed limiter
+  engine/categories.js Category detection and folder routing
   engine/ytdlp.js      yt-dlp/Deno/ffmpeg installer, probe, and video job runner
   bridge/server.js     Loopback HTTP API for the extension
 src/                   React renderer
 extension/             Manifest V3 extension for Chrome / Edge
 scripts/dev.js         Dev runner (Vite + Electron)
-scripts/make-icons.js  Generates the PNG icons
+scripts/make-icons.js  Generates the PNG and ICO icons
+scripts/make-shortcut.js Desktop / Start Menu shortcuts
+swiftfetch.cmd         Launches the app from a shell
 ```
 
 ## Where data lives

@@ -7,11 +7,12 @@ const { EventEmitter } = require('events');
 const { Download, PART_EXT, STATE_EXT } = require('./downloader');
 const { VideoDownload } = require('./ytdlp');
 const { probe, sanitizeFilename } = require('./http');
+const { categorize, resolveDir } = require('./categories');
 
 const PERSIST_FIELDS = [
   'id', 'url', 'finalUrl', 'filename', 'dir', 'filePath', 'size', 'resumable', 'contentType',
   'status', 'downloaded', 'segments', 'segmentCount', 'error', 'headers', 'addedAt', 'completedAt', 'source',
-  'kind', 'video', 'quality', 'stage',
+  'kind', 'video', 'quality', 'stage', 'category',
 ];
 
 /**
@@ -137,6 +138,8 @@ class Queue extends EventEmitter {
         job.resumable = true;
         job.contentType = 'video via yt-dlp';
         job.filename = sanitizeFilename(info.title) + (job.quality === 'audio' ? '.m4a' : '.mp4');
+        job.category = categorize(job, this.settings.get('categories'));
+        job.dir = this._routeDir(dir, job.category);
         job.status = autoStart ? 'queued' : 'paused';
       } else {
         const info = await probe(url, headers);
@@ -145,6 +148,8 @@ class Queue extends EventEmitter {
         job.resumable = info.resumable;
         job.contentType = info.contentType;
         if (!job.filename) job.filename = info.filename;
+        job.category = categorize(job, this.settings.get('categories'));
+        job.dir = this._routeDir(dir, job.category);
         job.filePath = await this._uniquePath(job.dir, job.filename);
         job.filename = path.basename(job.filePath);
         job.status = autoStart ? 'queued' : 'paused';
@@ -157,6 +162,15 @@ class Queue extends EventEmitter {
     this._changed();
     this.tick();
     return job.id;
+  }
+
+  _routeDir(chosenDir, category) {
+    return resolveDir({
+      chosenDir,
+      baseDir: this.settings.get('downloadDir'),
+      organize: this.settings.get('organize'),
+      category,
+    });
   }
 
   async _uniquePath(dir, filename) {

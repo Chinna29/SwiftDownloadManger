@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('sf', {
     list: invoke('jobs:list'),
     add: invoke('jobs:add'),
     probe: invoke('jobs:probe'),
+    targetDir: invoke('jobs:targetDir'),
     pause: invoke('jobs:pause'),
     resume: invoke('jobs:resume'),
     remove: invoke('jobs:remove'),
@@ -27,6 +28,12 @@ contextBridge.exposeInMainWorld('sf', {
   settings: {
     get: invoke('settings:get'),
     set: invoke('settings:set'),
+    categoryNames: invoke('settings:categoryNames'),
+  },
+  app: {
+    info: invoke('app:info'),
+    createShortcuts: invoke('app:createShortcuts'),
+    openPath: invoke('shell:openPath'),
   },
   video: {
     status: invoke('video:status'),

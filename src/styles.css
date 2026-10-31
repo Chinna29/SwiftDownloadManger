@@ -175,3 +175,11 @@ button.link:hover { text-decoration: underline; background: none; }
 .tools { display: flex; flex-direction: column; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .tool { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .tool > div:first-child { min-width: 0; }
+
+/* ---- settings tabs & categories ---- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+.tabs button { background: transparent; border-color: transparent; padding: 6px 12px; color: var(--muted); }
+.tabs button.active { background: var(--panel-2); border-color: var(--border); color: var(--text); }
+.cats { display: flex; flex-direction: column; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.cats.disabled { opacity: 0.55; }
+.cats .field > span i { font-style: normal; font-weight: 400; }

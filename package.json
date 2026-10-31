@@ -10,7 +10,9 @@
     "dev": "node scripts/dev.js",
     "build:renderer": "vite build",
     "build": "vite build && electron-builder",
-    "start": "electron ."
+    "start": "electron .",
+    "icons": "node scripts/make-icons.js",
+    "shortcut": "vite build && node scripts/make-shortcut.js"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -25,9 +27,23 @@
   "build": {
     "appId": "com.swiftfetch.app",
     "productName": "SwiftFetch",
-    "directories": { "output": "release" },
-    "files": ["dist/**", "electron/**", "package.json"],
-    "win": { "target": ["nsis"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
