@@ -57,11 +57,14 @@ endpoint, so ordinary web pages cannot push downloads into the app.
 1. Open **Settings → Video downloads** and click **Install** next to yt-dlp. This fetches
    yt-dlp (≈24 MB) and Deno (≈43 MB). The Add dialog offers the same install the first time you
    paste a video page URL.
-2. Optionally install **ffmpeg** (≈130 MB). Without it only pre-merged formats are available,
-   which on YouTube means up to 720p; with it you get 1080p and above plus audio-only extraction.
+2. Install **ffmpeg** (≈130 MB) unless you only want low quality. Without it only pre-merged
+   formats are available, which on YouTube is often just 360p; with it you get 720p, 1080p, 4K
+   and audio-only extraction. The quality lists only ever show resolutions that will really be
+   downloaded.
 3. Paste a video page URL in **Add URL**, click **Analyze as video**, choose a quality, download.
-   From the browser, use the extension popup's **Download video from this page** or the
-   right-click entry of the same name.
+   In the browser, a floating **Download** button appears over any video player; click it to see
+   the resolution list with sizes and start the download in one click, IDM style. The extension
+   popup and the right-click menu offer the same with the default quality.
 
 Downloading from YouTube is against its terms of service. Keep it to your own uploads,
 Creative Commons content, or offline personal viewing. Sites that rehost pirated content

@@ -127,7 +127,7 @@ export default function SettingsDialog({ settings, bridge, onSave, onClose }) {
             <div>
               <b>ffmpeg</b>
               <span className={tools?.ffmpeg ? 'ok' : 'warn'}>{tools ? (tools.ffmpeg ? ' ' + tools.ffmpeg : ' not installed') : ' …'}</span>
-              <div className="dim small">Needed to merge separate video and audio streams (1080p and above) and for audio-only extraction.</div>
+              <div className="dim small">Merges separate video and audio streams. Without it YouTube is often limited to 360p; with it you get 720p, 1080p, 4K and clean audio-only extraction.</div>
             </div>
             <div className="row">
               {!tools?.ffmpeg && <button type="button" disabled={!!install} onClick={() => doInstall('ffmpeg')}>Install (≈130 MB)</button>}

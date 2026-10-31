@@ -9,7 +9,7 @@ const http = require('http');
  * Only extension origins (or requests with no Origin, e.g. curl) are accepted,
  * so a random web page cannot push downloads into the app.
  */
-function startBridge({ port, version, queue, onAdded }) {
+function startBridge({ port, version, queue, ytdlp, onAdded }) {
   const server = http.createServer(async (req, res) => {
     const origin = req.headers.origin || '';
     const allowed = !origin || /^(chrome|moz|edge|safari-web)-extension:\/\//i.test(origin);
@@ -27,7 +27,22 @@ function startBridge({ port, version, queue, onAdded }) {
 
     try {
       if (req.method === 'GET' && req.url === '/ping') {
-        return json(res, 200, { ok: true, app: 'SwiftFetch', version });
+        return json(res, 200, {
+          ok: true, app: 'SwiftFetch', version,
+          tools: { ytdlp: !!ytdlp?.hasYtDlp(), ffmpeg: !!ytdlp?.hasFfmpeg() },
+        });
+      }
+      if (req.method === 'POST' && req.url === '/probe') {
+        const body = await readJson(req);
+        if (!ytdlp || !ytdlp.hasYtDlp()) {
+          return json(res, 200, { ok: false, error: 'yt-dlp is not installed. Open SwiftFetch → Settings → Video downloads → Install.', needsInstall: true });
+        }
+        try {
+          const info = await ytdlp.probe(body.url);
+          return json(res, 200, { ok: true, info, tools: { ffmpeg: ytdlp.hasFfmpeg() } });
+        } catch (e) {
+          return json(res, 200, { ok: false, error: e.message });
+        }
       }
       if (req.method === 'GET' && req.url === '/jobs') {
         return json(res, 200, { ok: true, jobs: queue.snapshot() });

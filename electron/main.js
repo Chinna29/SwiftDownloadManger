@@ -76,6 +76,7 @@ async function restartBridge() {
     port: settings.get('bridgePort'),
     version: app.getVersion(),
     queue,
+    ytdlp,
     onAdded: () => {
       if (settings.get('showOnBrowserAdd') && win) {
         if (win.isMinimized()) win.restore();

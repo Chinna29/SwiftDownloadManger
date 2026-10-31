@@ -23,6 +23,7 @@ async function init() {
   $('dot').classList.toggle('on', online);
   $('appState').textContent = online ? 'app running' : 'app not running';
   $('enabled').checked = settings.enabled;
+  $('pageButton').checked = settings.pageButton !== false;
   $('port').value = settings.port;
   $('minSize').value = settings.minSizeKB;
 
@@ -30,11 +31,13 @@ async function init() {
     type: 'setSettings',
     settings: {
       enabled: $('enabled').checked,
+      pageButton: $('pageButton').checked,
       port: Number($('port').value) || 47831,
       minSizeKB: Number($('minSize').value) || 0,
     },
   });
   $('enabled').onchange = save;
+  $('pageButton').onchange = save;
   $('port').onchange = save;
   $('minSize').onchange = save;
 

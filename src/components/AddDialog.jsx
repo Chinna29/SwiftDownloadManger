@@ -161,11 +161,15 @@ export default function AddDialog({ settings, onClose }) {
               <label className="field inline">
                 <span>Quality</span>
                 <select value={quality} onChange={(e) => setQuality(e.target.value)}>
-                  {video.qualities.map((q) => <option key={q.key} value={q.key}>{q.label}</option>)}
+                  {video.qualities.map((q) => (
+                    <option key={q.key} value={q.key}>
+                      {q.key === 'best' && q.height ? 'Best (' + q.height + 'p)' : q.label}{q.size ? ' · ≈ ' + bytes(q.size) : ''}
+                    </option>
+                  ))}
                 </select>
               </label>
               {!tools?.ffmpeg && quality !== 'audio' && (
-                <div className="warn small">Without ffmpeg only pre-merged formats are available (usually up to 720p). Install it in Settings for higher quality.</div>
+                <div className="warn small">Without ffmpeg only pre-merged formats are available (on YouTube that is often just 360p). Install it in Settings to unlock the higher resolutions.</div>
               )}
               <button type="button" className="link" onClick={() => setMode('file')}>Download as a plain file instead</button>
             </div>

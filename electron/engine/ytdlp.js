@@ -156,16 +156,25 @@ class YtDlp {
     try { info = JSON.parse(r.stdout); } catch { throw new Error('yt-dlp returned unreadable data'); }
     if (info._type === 'playlist' && info.entries?.length) info = info.entries[0];
 
+    const formats = info.formats || [];
     const heights = new Set();
     let hasAudioOnly = false;
-    for (const f of info.formats || []) {
+    for (const f of formats) {
       if (f.vcodec && f.vcodec !== 'none' && f.height) heights.add(f.height);
       if ((!f.vcodec || f.vcodec === 'none') && f.acodec && f.acodec !== 'none') hasAudioOnly = true;
     }
+    const maxHeight = heights.size ? Math.max(...heights) : null;
     const available = QUALITIES.filter((q) => {
       if (q.key === 'best') return true;
       if (q.key === 'audio') return hasAudioOnly || heights.size === 0;
       return [...heights].some((h) => h <= Number(q.key) && h > (nextLower(q.key) || 0));
+    }).map((q) => {
+      const est = estimateSize(formats, q.key, maxHeight, this.hasFfmpeg());
+      return { ...q, size: est.size, height: est.height, merged: est.merged };
+    }).filter((q) => {
+      // Drop presets that would silently resolve to a lower resolution (e.g. 1080p -> 360p without ffmpeg).
+      if (q.key === 'best' || q.key === 'audio') return true;
+      return q.height != null && q.height > (nextLower(q.key) || 0);
     });
 
     return {
@@ -192,6 +201,35 @@ class YtDlp {
     if (ff) return ['-f', `bv*${cap}+ba/b${cap}/bv*+ba/b`, '--merge-output-format', 'mp4'];
     return ['-f', `b${cap}/b/bv*${cap}`];
   }
+}
+
+/**
+ * Rough size for a quality preset, mirroring the format selector: best video at or below the cap
+ * plus best audio when ffmpeg can merge, otherwise the best pre-merged (progressive) format.
+ */
+function estimateSize(formats, key, maxHeight, canMerge) {
+  const sz = (f) => f.filesize ?? f.filesize_approx ?? null;
+  const hasV = (f) => f.vcodec && f.vcodec !== 'none';
+  const hasA = (f) => f.acodec && f.acodec !== 'none';
+  const rank = (f) => (f.height || 0) * 1e6 + (f.tbr || 0);
+  const audioAll = formats.filter((f) => hasA(f) && !hasV(f)).sort((a, b) => (b.abr || b.tbr || 0) - (a.abr || a.tbr || 0));
+  const audio = audioAll[0];
+
+  if (key === 'audio') {
+    // Without ffmpeg we fetch ba[ext=m4a]/ba, so estimate the same way.
+    const f = (!canMerge && audioAll.find((a) => a.ext === 'm4a')) || audio || formats.filter(hasA).sort((a, b) => (a.tbr || 0) - (b.tbr || 0))[0];
+    return { size: f ? sz(f) : null, height: null, merged: false };
+  }
+  const cap = key === 'best' ? maxHeight || Infinity : Number(key);
+  if (canMerge) {
+    const v = formats.filter((f) => hasV(f) && (f.height || 0) <= cap).sort((a, b) => rank(b) - rank(a))[0];
+    if (!v) return { size: null, height: null, merged: false };
+    if (hasA(v)) return { size: sz(v), height: v.height, merged: false };
+    const vs = sz(v), as = audio ? sz(audio) : null;
+    return { size: vs != null ? vs + (as || 0) : null, height: v.height, merged: true };
+  }
+  const p = formats.filter((f) => hasV(f) && hasA(f) && (f.height || 0) <= cap).sort((a, b) => rank(b) - rank(a))[0];
+  return p ? { size: sz(p), height: p.height, merged: false } : { size: null, height: null, merged: false };
 }
 
 function nextLower(key) {

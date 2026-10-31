@@ -4,7 +4,7 @@
 //  - Adds "Download with SwiftFetch" to the context menu for links and media.
 //  - Watches responses for video/audio so the popup can offer them for download.
 
-const DEFAULTS = { enabled: true, port: 47831, minSizeKB: 0, skipExtensions: [] };
+const DEFAULTS = { enabled: true, pageButton: true, port: 47831, minSizeKB: 0, skipExtensions: [], hiddenHosts: [] };
 const MEDIA_TYPES = /^(video|audio)\//i;
 const MEDIA_EXT = /\.(mp4|webm|mkv|m4v|mov|avi|flv|mp3|m4a|aac|ogg|opus|flac|wav)(\?|$)/i;
 
@@ -44,11 +44,12 @@ async function cookieHeader(url) {
   }
 }
 
-async function sendToApp({ url, filename, referer, kind }) {
+async function sendToApp({ url, filename, referer, kind, quality }) {
   const s = await getSettings();
   const payload = {
     url,
     kind: kind || 'file',
+    quality: quality || undefined,
     filename: filename || undefined,
     referer: referer || undefined,
     cookies: kind === 'video' ? undefined : await cookieHeader(url),
@@ -180,8 +181,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ media: list });
     } else if (msg.type === 'download') {
       try {
-        const id = await sendToApp({ url: msg.url, referer: msg.referer, kind: msg.kind });
+        const id = await sendToApp({ url: msg.url, referer: msg.referer, kind: msg.kind, quality: msg.quality });
         sendResponse({ ok: true, id });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    } else if (msg.type === 'probePage') {
+      const s = await getSettings();
+      if (!(await ping(s.port, 1500))) {
+        sendResponse({ ok: false, offline: true, error: 'SwiftFetch is not running.' });
+        return;
+      }
+      try {
+        const r = await fetch(base(s.port, '/probe'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: msg.url }),
+        });
+        sendResponse(await r.json());
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
       }
