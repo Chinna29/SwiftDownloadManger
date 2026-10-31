@@ -8,7 +8,9 @@ const root = path.join(__dirname, '..');
 const PORT = 5173;
 const URL = 'http://localhost:' + PORT;
 
-const vite = spawn(process.execPath, [require.resolve('vite/bin/vite.js'), '--port', String(PORT), '--strictPort'], {
+// vite's package "exports" map hides bin/vite.js from require.resolve, so build the path by hand.
+const viteBin = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
+const vite = spawn(process.execPath, [viteBin, '--port', String(PORT), '--strictPort'], {
   cwd: root,
   stdio: 'inherit',
 });
