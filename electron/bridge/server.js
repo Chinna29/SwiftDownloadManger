@@ -1,5 +1,7 @@
 'use strict';
 const http = require('http');
+const crypto = require('crypto');
+const { writeCookieFile, removeCookieFile } = require('../engine/cookies');
 
 /**
  * Tiny loopback HTTP API the browser extension talks to.
@@ -9,7 +11,7 @@ const http = require('http');
  * Only extension origins (or requests with no Origin, e.g. curl) are accepted,
  * so a random web page cannot push downloads into the app.
  */
-function startBridge({ port, version, queue, ytdlp, onAdded }) {
+function startBridge({ port, version, queue, ytdlp, cookiesDir, onAdded }) {
   const server = http.createServer(async (req, res) => {
     const origin = req.headers.origin || '';
     const allowed = !origin || /^(chrome|moz|edge|safari-web)-extension:\/\//i.test(origin);
@@ -37,15 +39,29 @@ function startBridge({ port, version, queue, ytdlp, onAdded }) {
         if (!ytdlp || !ytdlp.hasYtDlp()) {
           return json(res, 200, { ok: false, error: 'yt-dlp is not installed. Open SwiftFetch → Settings → Video downloads → Install.', needsInstall: true });
         }
+        // Cookies from the extension make logged-in pages (X, Facebook, Instagram) probe correctly.
+        const cookiesFile = await writeCookieFile(cookiesDir, body.cookieJar, 'probe-' + crypto.randomUUID());
         try {
-          const info = await ytdlp.probe(body.url);
+          const info = await ytdlp.probe(body.url, { cookiesFile, referer: body.referer, userAgent: body.userAgent });
           return json(res, 200, { ok: true, info, tools: { ffmpeg: ytdlp.hasFfmpeg() } });
         } catch (e) {
           return json(res, 200, { ok: false, error: e.message });
+        } finally {
+          await removeCookieFile(cookiesFile);
         }
       }
       if (req.method === 'GET' && req.url === '/jobs') {
         return json(res, 200, { ok: true, jobs: queue.snapshot() });
+      }
+      if (req.method === 'POST' && req.url === '/import') {
+        // The browser finished a download it had to do itself (blob:, data:, form POST);
+        // move the finished file into the SwiftDM folders and record it as completed.
+        const body = await readJson(req);
+        const r = await queue.importFile({
+          path: body.path, filename: body.filename, url: body.url, referer: body.referer, mime: body.mime, source: 'browser',
+        });
+        if (onAdded) onAdded(r.id);
+        return json(res, 200, { ok: true, ...r });
       }
       if (req.method === 'POST' && req.url === '/add') {
         const body = await readJson(req);
@@ -60,6 +76,7 @@ function startBridge({ port, version, queue, ytdlp, onAdded }) {
           source: 'browser',
           kind: body.kind === 'video' ? 'video' : 'file',
           quality: body.quality || undefined,
+          cookieJar: Array.isArray(body.cookieJar) ? body.cookieJar : null,
         });
         if (onAdded) onAdded(id);
         return json(res, 200, { ok: true, id });

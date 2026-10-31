@@ -8,11 +8,12 @@ const { Download, PART_EXT, STATE_EXT } = require('./downloader');
 const { VideoDownload } = require('./ytdlp');
 const { probe, sanitizeFilename } = require('./http');
 const { categorize, resolveDir } = require('./categories');
+const { writeCookieFile, removeCookieFile } = require('./cookies');
 
 const PERSIST_FIELDS = [
   'id', 'url', 'finalUrl', 'filename', 'dir', 'filePath', 'size', 'resumable', 'contentType',
   'status', 'downloaded', 'segments', 'segmentCount', 'error', 'headers', 'addedAt', 'completedAt', 'source',
-  'kind', 'video', 'quality', 'stage', 'category',
+  'kind', 'video', 'quality', 'stage', 'category', 'cookiesFile', 'container', 'imported',
 ];
 
 /**
@@ -21,12 +22,13 @@ const PERSIST_FIELDS = [
  * 'completed' / 'failed' with the job for notifications.
  */
 class Queue extends EventEmitter {
-  constructor({ storePath, settings, limiter, ytdlp }) {
+  constructor({ storePath, settings, limiter, ytdlp, cookiesDir }) {
     super();
     this.storePath = storePath;
     this.settings = settings;
     this.limiter = limiter;
     this.ytdlp = ytdlp;
+    this.cookiesDir = cookiesDir || path.join(path.dirname(storePath), 'cookies');
     this.jobs = new Map();
     this.active = new Map(); // id -> Download
     this._persistTimer = null;
@@ -93,7 +95,7 @@ class Queue extends EventEmitter {
 
   /* ---------- adding ---------- */
 
-  async add({ url, filename, dir, headers = {}, segments, autoStart = true, source = 'app', kind = 'file', video = null, quality = null }) {
+  async add({ url, filename, dir, headers = {}, segments, autoStart = true, source = 'app', kind = 'file', video = null, quality = null, cookieJar = null }) {
     url = String(url || '').trim();
     if (!/^https?:\/\//i.test(url)) throw new Error('Only http(s) URLs are supported');
 
@@ -122,6 +124,8 @@ class Queue extends EventEmitter {
       video: null,
       quality: null,
       stage: null,
+      cookiesFile: null,
+      container: null,
     };
     this.jobs.set(job.id, job);
     this._changed();
@@ -129,15 +133,20 @@ class Queue extends EventEmitter {
     try {
       if (kind === 'video') {
         if (!this.ytdlp || !this.ytdlp.hasYtDlp()) throw new Error('yt-dlp is not installed. Install it from Settings.');
-        const info = video || (await this.ytdlp.probe(url));
+        // Browser cookies travel as a Netscape file that only this job reads; removed when the job ends.
+        job.cookiesFile = await writeCookieFile(this.cookiesDir, cookieJar, job.id);
+        const context = { cookiesFile: job.cookiesFile, referer: headers.Referer, userAgent: headers['User-Agent'] };
+        const info = video || (await this.ytdlp.probe(url, context));
+        if (info.isLive) throw new Error('Live streams are not supported yet. Try again once the stream has ended.');
         job.video = {
           id: info.id, title: info.title, extractor: info.extractor, duration: info.duration,
           thumbnail: info.thumbnail, uploader: info.uploader, webpage: info.webpage,
         };
         job.quality = quality || this.settings.get('videoQuality') || 'best';
+        job.container = this.settings.get('videoContainer') === 'mkv' ? 'mkv' : 'mp4';
         job.resumable = true;
         job.contentType = 'video via yt-dlp';
-        job.filename = sanitizeFilename(info.title) + (job.quality === 'audio' ? '.m4a' : '.mp4');
+        job.filename = sanitizeFilename(info.title) + (job.quality === 'audio' ? '.m4a' : '.' + job.container);
         job.category = categorize(job, this.settings.get('categories'));
         job.dir = this._routeDir(dir, job.category);
         job.status = autoStart ? 'queued' : 'paused';
@@ -157,6 +166,10 @@ class Queue extends EventEmitter {
     } catch (e) {
       job.status = 'failed';
       job.error = e.message;
+      if (job.kind === 'video' && !job.video) {
+        await removeCookieFile(job.cookiesFile);
+        job.cookiesFile = null;
+      }
       this.emit('failed', job);
     }
     this._changed();
@@ -171,6 +184,65 @@ class Queue extends EventEmitter {
       organize: this.settings.get('organize'),
       category,
     });
+  }
+
+  /**
+   * Take a file the browser has already finished downloading (blob:/data: URLs,
+   * form POST responses) and file it into the SwiftDM category folder as a
+   * completed job. The file is moved, not copied.
+   */
+  async importFile({ path: srcPath, filename, url, referer, mime, source = 'browser' }) {
+    if (!srcPath || !path.isAbsolute(srcPath)) throw new Error('A full file path is required');
+    let st;
+    try { st = await fsp.stat(srcPath); } catch { throw new Error('File not found: ' + srcPath); }
+    if (!st.isFile()) throw new Error('Not a file: ' + srcPath);
+
+    const name = sanitizeFilename(filename || path.basename(srcPath));
+    const category = categorize({ filename: name, contentType: mime }, this.settings.get('categories'));
+    const dir = this._routeDir(null, category);
+    await fsp.mkdir(dir, { recursive: true });
+    const target = await this._uniquePath(dir, name);
+
+    const same = path.resolve(target) === path.resolve(srcPath);
+    if (!same) {
+      try {
+        await fsp.rename(srcPath, target);
+      } catch (e) {
+        if (e.code !== 'EXDEV') throw e;
+        await fsp.copyFile(srcPath, target);
+        await fsp.rm(srcPath, { force: true });
+      }
+    }
+
+    const job = {
+      id: crypto.randomUUID(),
+      url: url || 'file://' + srcPath,
+      finalUrl: url || null,
+      filename: path.basename(target),
+      dir,
+      filePath: target,
+      size: st.size,
+      resumable: false,
+      contentType: mime || null,
+      status: 'completed',
+      downloaded: st.size,
+      speed: 0,
+      eta: null,
+      segments: [],
+      segmentCount: 1,
+      error: null,
+      headers: referer ? { Referer: referer } : {},
+      addedAt: Date.now(),
+      completedAt: Date.now(),
+      source,
+      kind: 'file',
+      category,
+      imported: true,
+    };
+    this.jobs.set(job.id, job);
+    this._changed();
+    this.emit('completed', job);
+    return { id: job.id, filePath: target, category };
   }
 
   async _uniquePath(dir, filename) {
@@ -210,6 +282,10 @@ class Queue extends EventEmitter {
         quality: job.quality,
         videoId: job.video?.id,
         speedLimitKB: this.settings.get('speedLimitKB'),
+        container: job.container || 'mp4',
+        cookiesFile: job.cookiesFile,
+        referer: job.headers?.Referer,
+        userAgent: job.headers?.['User-Agent'],
       })
       : new Download({
         url: job.finalUrl || job.url,
@@ -258,6 +334,10 @@ class Queue extends EventEmitter {
         if (r.size != null) job.size = r.size;
       }
       job.downloaded = job.size ?? job.downloaded;
+      if (job.cookiesFile) {
+        removeCookieFile(job.cookiesFile);
+        job.cookiesFile = null;
+      }
       this._changed();
       this.emit('completed', job);
       this.tick();
@@ -315,9 +395,11 @@ class Queue extends EventEmitter {
       job.status = 'cancelling';
       this.jobs.delete(id);
       await dl.cancel();
+      await removeCookieFile(job.cookiesFile);
     } else if (job.kind === 'video') {
       if (job.status !== 'completed') await VideoDownload.cleanupDir(job.dir, job.video?.id);
       else if (deleteFile && job.filePath) await fsp.rm(job.filePath, { force: true }).catch(() => {});
+      await removeCookieFile(job.cookiesFile);
     } else if (job.filePath) {
       await fsp.rm(job.filePath + PART_EXT, { force: true }).catch(() => {});
       await fsp.rm(job.filePath + STATE_EXT, { force: true }).catch(() => {});

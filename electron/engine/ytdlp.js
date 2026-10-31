@@ -147,10 +147,22 @@ class YtDlp {
     return (r.stdout + r.stderr).trim().split('\n').pop();
   }
 
+  /** Args for a request context: browser cookies, referer and user agent. */
+  static contextArgs({ cookiesFile, referer, userAgent } = {}) {
+    const args = [];
+    if (cookiesFile) args.push('--cookies', cookiesFile);
+    if (referer) args.push('--referer', referer);
+    if (userAgent) args.push('--user-agent', userAgent);
+    return args;
+  }
+
   /** Ask yt-dlp for metadata. Returns a compact description for the UI. */
-  async probe(url) {
+  async probe(url, context = {}) {
     if (!this.hasYtDlp()) throw new Error('yt-dlp is not installed');
-    const r = await run(this.exe, [...this.runtimeArgs(), '-J', '--no-playlist', '--no-warnings', '--no-check-formats', url], { timeout: 60000 });
+    const r = await run(this.exe, [
+      ...this.runtimeArgs(), ...YtDlp.contextArgs(context),
+      '-J', '--no-playlist', '--no-warnings', '--no-check-formats', url,
+    ], { timeout: 90000 });
     if (r.code !== 0) throw new Error(cleanError(r.stderr) || 'yt-dlp could not read this page');
     let info;
     try { info = JSON.parse(r.stdout); } catch { throw new Error('yt-dlp returned unreadable data'); }
@@ -186,19 +198,25 @@ class YtDlp {
       uploader: info.uploader || info.channel || null,
       webpage: info.webpage_url || url,
       ext: info.ext || 'mp4',
+      isLive: !!info.is_live,
       heights: [...heights].sort((a, b) => b - a),
       qualities: available,
     };
   }
 
-  formatArgs(quality) {
+  /**
+   * Format selection. container is 'mp4' or 'mkv'; with ffmpeg the merged or
+   * single-file result is remuxed into it (no re-encode, codecs permitting).
+   */
+  formatArgs(quality, container = 'mp4') {
     const ff = this.hasFfmpeg();
+    const out = container === 'mkv' ? 'mkv' : 'mp4';
     if (quality === 'audio') {
       return ff ? ['-f', 'ba/b', '-x', '--audio-format', 'm4a'] : ['-f', 'ba[ext=m4a]/ba/b'];
     }
     const h = quality && quality !== 'best' ? Number(quality) : null;
     const cap = h ? `[height<=${h}]` : '';
-    if (ff) return ['-f', `bv*${cap}+ba/b${cap}/bv*+ba/b`, '--merge-output-format', 'mp4'];
+    if (ff) return ['-f', `bv*${cap}+ba/b${cap}/bv*+ba/b`, '--merge-output-format', out, '--remux-video', out];
     return ['-f', `b${cap}/b/bv*${cap}`];
   }
 }
@@ -263,7 +281,7 @@ function cleanError(stderr) {
  * 'progress', 'paused', 'complete', 'error', 'log'.
  */
 class VideoDownload extends EventEmitter {
-  constructor({ ytdlp, url, dir, quality, videoId, speedLimitKB = 0 }) {
+  constructor({ ytdlp, url, dir, quality, videoId, speedLimitKB = 0, container = 'mp4', cookiesFile = null, referer = null, userAgent = null }) {
     super();
     this.ytdlp = ytdlp;
     this.url = url;
@@ -271,6 +289,8 @@ class VideoDownload extends EventEmitter {
     this.quality = quality || 'best';
     this.videoId = videoId;
     this.speedLimitKB = speedLimitKB;
+    this.container = container;
+    this.context = { cookiesFile, referer, userAgent };
     this.proc = null;
     this.stopped = false;
     this.cancelled = false;
@@ -293,7 +313,8 @@ class VideoDownload extends EventEmitter {
     const outTpl = path.join(this.dir, '%(title)s [%(id)s].%(ext)s');
     const args = [
       ...this.ytdlp.runtimeArgs(),
-      ...this.ytdlp.formatArgs(this.quality),
+      ...YtDlp.contextArgs(this.context),
+      ...this.ytdlp.formatArgs(this.quality, this.container),
       '-o', outTpl,
       '--no-playlist',
       '--newline',
@@ -311,7 +332,7 @@ class VideoDownload extends EventEmitter {
     if (this.speedLimitKB > 0) args.push('--limit-rate', Math.round(this.speedLimitKB) + 'K');
     args.push(this.url);
 
-    this.emit('log', 'yt-dlp ' + args.join(' '));
+    this.emit('log', 'yt-dlp ' + args.map((a) => (a === this.context.cookiesFile ? '<cookies>' : a)).join(' '));
     this.proc = spawn(this.ytdlp.exe, args, { windowsHide: true, cwd: this.dir });
 
     let buf = '';

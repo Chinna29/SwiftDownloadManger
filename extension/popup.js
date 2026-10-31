@@ -24,6 +24,7 @@ async function init() {
   $('appState').textContent = online ? 'app running' : 'app not running';
   $('enabled').checked = settings.enabled;
   $('pageButton').checked = settings.pageButton !== false;
+  $('relayBlobs').checked = settings.relayBlobs !== false;
   $('port').value = settings.port;
   $('minSize').value = settings.minSizeKB;
 
@@ -32,12 +33,14 @@ async function init() {
     settings: {
       enabled: $('enabled').checked,
       pageButton: $('pageButton').checked,
+      relayBlobs: $('relayBlobs').checked,
       port: Number($('port').value) || 47831,
       minSizeKB: Number($('minSize').value) || 0,
     },
   });
   $('enabled').onchange = save;
   $('pageButton').onchange = save;
+  $('relayBlobs').onchange = save;
   $('port').onchange = save;
   $('minSize').onchange = save;
 
@@ -56,13 +59,15 @@ async function init() {
         const row = document.createElement('div');
         row.className = 'media';
         const name = m.url.split('/').pop().split('?')[0] || m.url;
+        const isStream = m.kind === 'stream';
         row.innerHTML = '<div class="info"><div class="name" title="' + m.url.replace(/"/g, '&quot;') + '">' + name + '</div>' +
-          '<div class="meta">' + m.type + ' · ' + fmtBytes(m.size) + '</div></div>';
+          '<div class="meta">' + m.type + (isStream ? ' · via yt-dlp' : ' · ' + fmtBytes(m.size)) + '</div></div>';
         const btn = document.createElement('button');
         btn.textContent = 'Download';
         btn.onclick = async () => {
           btn.disabled = true;
-          const r = await send({ type: 'download', url: m.url, referer: tab.url });
+          // Streams go through yt-dlp, which stitches the fragments into one file.
+          const r = await send({ type: 'download', url: m.url, referer: tab.url, kind: isStream ? 'video' : 'file' });
           say(r.ok ? 'Sent to SwiftFetch.' : r.error, r.ok);
           btn.disabled = false;
         };

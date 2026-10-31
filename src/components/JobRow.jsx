@@ -30,7 +30,7 @@ export default function JobRow({ job, selected, onSelect }) {
           <span className="job-name" title={job.filePath || job.url}>{job.filename || job.url}</span>
           <span className={'pill ' + job.status}>{STATUS_LABEL[job.status] || job.status}</span>
           {job.kind === 'video' && <span className="pill video">video{job.quality && job.quality !== 'best' ? ' · ' + (job.quality === 'audio' ? 'audio' : job.quality + 'p') : ''}</span>}
-          {job.source === 'browser' && <span className="pill src">browser</span>}
+          {job.source === 'browser' && <span className="pill src">{job.imported ? 'moved from browser' : 'browser'}</span>}
         </div>
         <SegmentBar job={job} />
         <div className="job-meta">

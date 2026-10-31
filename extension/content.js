@@ -154,19 +154,61 @@
     }
   }
 
+  /**
+   * In a feed (X, Facebook, Instagram, Reddit) the page URL is not the video's URL.
+   * Walk up from the player to the nearest post container and use its permalink.
+   */
+  function resolvePostUrl(v) {
+    const host = HOST.replace(/^www\./, '');
+    const patterns = [];
+    if (/(^|\.)(x\.com|twitter\.com)$/.test(host)) patterns.push(/\/status\/\d+/);
+    if (/(^|\.)facebook\.com$/.test(host)) patterns.push(/\/(videos|reel|reels|watch|posts|share\/v|share\/r)\b/);
+    if (/(^|\.)instagram\.com$/.test(host)) patterns.push(/\/(p|reel|reels|tv)\/[\w-]+/);
+    if (/(^|\.)reddit\.com$/.test(host)) patterns.push(/\/comments\/\w+/);
+    if (/(^|\.)tiktok\.com$/.test(host)) patterns.push(/\/video\/\d+/);
+    if (/(^|\.)linkedin\.com$/.test(host)) patterns.push(/\/(posts|feed\/update)\//);
+    if (!patterns.length) return location.href;
+
+    const matches = (href) => patterns.some((re) => re.test(href));
+    // If the page itself is already a permalink, prefer it.
+    if (matches(location.pathname)) return location.href;
+
+    let node = v;
+    for (let depth = 0; node && node !== document.body && depth < 14; depth++) {
+      const scope = node.matches && node.matches('article, [role="article"], [data-testid="tweet"], shreddit-post, [data-pagelet]') ? node : null;
+      const container = scope || node;
+      const links = container.querySelectorAll ? container.querySelectorAll('a[href]') : [];
+      let best = null;
+      for (const a of links) {
+        let href;
+        try { href = new URL(a.getAttribute('href'), location.origin); } catch { continue; }
+        if (href.origin !== location.origin && !/facebook\.com|x\.com|twitter\.com/.test(href.hostname)) continue;
+        if (!matches(href.pathname)) continue;
+        // X: the timestamp link is the canonical status link; Facebook: shortest video/post link wins.
+        if (a.querySelector('time')) return href.origin + href.pathname;
+        if (!best || href.pathname.length < best.pathname.length) best = href;
+      }
+      if (best && scope) return best.origin + best.pathname;
+      if (best && depth >= 6) return best.origin + best.pathname;
+      node = node.parentElement;
+    }
+    return location.href;
+  }
+
   async function openPanel() {
     panelOpen = true;
     panel.classList.add('show');
     update();
-    const url = location.href;
+    const url = video ? resolvePostUrl(video) : location.href;
+    const pageAtOpen = location.href;
     render(el('div', { class: 'msg' }, el('span', { class: 'spin' }), 'Analyzing video…'));
     let r = cache.get(url);
     if (!r || Date.now() - r.at > 5 * 60 * 1000) {
-      r = await send({ type: 'probePage', url });
+      r = await send({ type: 'probePage', url, referer: pageAtOpen });
       r.at = Date.now();
       if (r.ok) cache.set(url, r);
     }
-    if (!panelOpen || location.href !== url) return;
+    if (!panelOpen || location.href !== pageAtOpen) return;
     if (!r.ok) {
       render(
         el('div', { class: 'msg err' }, r.error || 'Could not analyze this page'),
@@ -183,7 +225,7 @@
         e.stopPropagation();
         b.disabled = true;
         b.textContent = 'Sending…';
-        const res = await send({ type: 'download', url, referer: url, kind: 'video', quality: q.key });
+        const res = await send({ type: 'download', url, referer: pageAtOpen, kind: 'video', quality: q.key });
         b.textContent = res.ok ? 'Sent ✓' : 'Failed';
         if (res.ok) setTimeout(closePanel, 1200);
         else { b.disabled = false; sizeEl.textContent = res.error || 'Error'; }
@@ -196,12 +238,14 @@
       ? el('div', { class: 'note' }, 'Up to ' + maxH + 'p is available once ffmpeg is installed in SwiftFetch → Settings → Video downloads.')
       : null;
     const meta = [info.extractor || '', info.uploader, info.duration ? fmtDur(info.duration) : null].filter(Boolean).join(' · ');
+    const srcNote = url !== pageAtOpen ? el('div', { class: 'note', style: 'color:#8b93a7' }, 'Post: ' + url) : null;
     render(
       el('div', { class: 'hd' },
         info.thumbnail && el('img', { src: info.thumbnail, alt: '' }),
         el('div', null, el('div', { class: 't' }, info.title), el('div', { class: 'm' }, meta)),
       ),
       el('div', { class: 'rows' }, rows),
+      srcNote,
       note,
       footer(),
     );

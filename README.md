@@ -82,6 +82,26 @@ endpoint, so ordinary web pages cannot push downloads into the app.
    the resolution list with sizes and start the download in one click, IDM style. The extension
    popup and the right-click menu offer the same with the default quality.
 
+### Logged-in sites, feeds and streams
+
+- **Cookies.** Video downloads started from the extension carry your browser cookies for that
+  site, so anything you can watch while signed in to X, Facebook or Instagram downloads too.
+  Each job gets its own Netscape cookie file under `%APPDATA%\swiftfetch\cookies\`, passed to
+  yt-dlp with `--cookies` and deleted when the job finishes. Downloads started from the app's
+  Add URL dialog carry no cookies.
+- **Feeds.** On X, Facebook, Instagram, Reddit, TikTok and LinkedIn the on-page button resolves
+  the permalink of the post that contains the video, so it works while scrolling a feed, not only
+  on the post's own page.
+- **HLS and DASH.** The extension popup lists `.m3u8` and `.mpd` playlists it sees and sends them
+  to yt-dlp, which downloads the fragments and stitches them into one file.
+- **Output container.** Settings → Video lets you choose MP4 or MKV (needs ffmpeg).
+- **In-page downloads.** Files the page builds itself (`blob:` and `data:` URLs, such as exports
+  and generated PDFs) cannot be fetched by an external app, so Chrome saves them and the
+  extension then hands the finished file to SwiftFetch, which moves it into the right SwiftDM
+  folder and lists it as completed. Toggle in the popup.
+- **Not possible.** DRM services (Netflix, Prime and similar) are encrypted and are not supported
+  by yt-dlp or SwiftFetch; torrents, magnet links and FTP are different protocols.
+
 Downloading from YouTube is against its terms of service. Keep it to your own uploads,
 Creative Commons content, or offline personal viewing. Sites that rehost pirated content
 are deliberately not a target of this feature.
@@ -98,6 +118,7 @@ electron/
   engine/queue.js      Job list, scheduling, persistence
   engine/limiter.js    Token-bucket speed limiter
   engine/categories.js Category detection and folder routing
+  engine/cookies.js    Netscape cookie files for yt-dlp, one per job
   engine/ytdlp.js      yt-dlp/Deno/ffmpeg installer, probe, and video job runner
   bridge/server.js     Loopback HTTP API for the extension
 src/                   React renderer

@@ -44,6 +44,7 @@ async function boot() {
     notifyOnComplete: true,
     showOnBrowserAdd: true,
     videoQuality: 'best',
+    videoContainer: 'mp4',
     launchAtStartup: true,
     closeToTray: true,
     migratedSwiftDM: false,
@@ -61,7 +62,11 @@ async function boot() {
 
   limiter = new SpeedLimiter(settings.get('speedLimitKB') * 1024);
   ytdlp = new YtDlp(path.join(userData, 'bin'));
-  queue = new Queue({ storePath: path.join(userData, 'jobs.json'), settings, limiter, ytdlp });
+  const cookiesDir = path.join(userData, 'cookies');
+  // Cookie files are per job and short-lived; clear any left over from a crash.
+  fs.rmSync(cookiesDir, { recursive: true, force: true });
+  queue = new Queue({ storePath: path.join(userData, 'jobs.json'), settings, limiter, ytdlp, cookiesDir });
+  for (const j of queue.jobs.values()) if (j.cookiesFile) j.cookiesFile = null;
 
   settings.on('change', async (data, before) => {
     limiter.setRate(data.speedLimitKB * 1024);
@@ -331,6 +336,7 @@ async function restartBridge() {
     version: app.getVersion(),
     queue,
     ytdlp,
+    cookiesDir: path.join(app.getPath('userData'), 'cookies'),
     onAdded: () => {
       if (settings.get('showOnBrowserAdd')) showWindow();
     },

@@ -190,6 +190,15 @@ export default function SettingsDialog({ settings, bridge, onSave, onClose }) {
                   {qualities.map((q) => <option key={q.key} value={q.key}>{q.label}</option>)}
                 </select>
               </label>
+              <label className="field inline">
+                <span>Output container</span>
+                <select value={s.videoContainer || 'mp4'} onChange={up('videoContainer')} disabled={!tools?.ffmpeg}>
+                  <option value="mp4">MP4 (plays everywhere)</option>
+                  <option value="mkv">MKV (keeps any codec, no remux loss)</option>
+                </select>
+                {!tools?.ffmpeg && <span className="dim small">needs ffmpeg</span>}
+              </label>
+              <div className="dim small">Downloads sent from the browser extension carry your login cookies for that site, so content you can see while signed in (X, Facebook, Instagram) downloads too. Cookie files are per download and deleted when it finishes.</div>
               {(installText || msg) && <div className="dim small">{installText || msg}</div>}
             </div>
           </>
