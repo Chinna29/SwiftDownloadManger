@@ -148,11 +148,15 @@ class YtDlp {
   }
 
   /** Args for a request context: browser cookies, referer and user agent. */
-  static contextArgs({ cookiesFile, referer, userAgent } = {}) {
+  static contextArgs({ cookiesFile, referer, userAgent, extraHeaders } = {}) {
     const args = [];
     if (cookiesFile) args.push('--cookies', cookiesFile);
     if (referer) args.push('--referer', referer);
     if (userAgent) args.push('--user-agent', userAgent);
+    for (const [k, v] of Object.entries(extraHeaders || {})) {
+      if (/^(referer|user-agent|cookie)$/i.test(k)) continue;
+      args.push('--add-headers', k + ':' + v);
+    }
     return args;
   }
 
@@ -281,7 +285,7 @@ function cleanError(stderr) {
  * 'progress', 'paused', 'complete', 'error', 'log'.
  */
 class VideoDownload extends EventEmitter {
-  constructor({ ytdlp, url, dir, quality, videoId, speedLimitKB = 0, container = 'mp4', cookiesFile = null, referer = null, userAgent = null }) {
+  constructor({ ytdlp, url, dir, quality, videoId, speedLimitKB = 0, container = 'mp4', cookiesFile = null, referer = null, userAgent = null, extraHeaders = null }) {
     super();
     this.ytdlp = ytdlp;
     this.url = url;
@@ -290,7 +294,7 @@ class VideoDownload extends EventEmitter {
     this.videoId = videoId;
     this.speedLimitKB = speedLimitKB;
     this.container = container;
-    this.context = { cookiesFile, referer, userAgent };
+    this.context = { cookiesFile, referer, userAgent, extraHeaders };
     this.proc = null;
     this.stopped = false;
     this.cancelled = false;

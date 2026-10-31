@@ -94,6 +94,12 @@ endpoint, so ordinary web pages cannot push downloads into the app.
   on the post's own page.
 - **HLS and DASH.** The extension popup lists `.m3u8` and `.mpd` playlists it sees and sends them
   to yt-dlp, which downloads the fragments and stitches them into one file.
+- **Media sniffer.** A page-level hook (`extension/sniffer.js`, injected into every frame) watches
+  the player's own `fetch` and `XMLHttpRequest` traffic and recognises manifests by their content,
+  not their URL, so playlists built in JavaScript and served with generic content types are still
+  caught. It records the request headers the player used (tokens, custom auth) and SwiftFetch
+  replays them through yt-dlp's `--add-headers`. Master playlists are listed first in the popup.
+  Encrypted DRM streams are detected but cannot be downloaded.
 - **Output container.** Settings → Video lets you choose MP4 or MKV (needs ffmpeg).
 - **In-page downloads.** Files the page builds itself (`blob:` and `data:` URLs, such as exports
   and generated PDFs) cannot be fetched by an external app, so Chrome saves them and the

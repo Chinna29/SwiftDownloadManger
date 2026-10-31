@@ -66,6 +66,13 @@ function startBridge({ port, version, queue, ytdlp, cookiesDir, onAdded }) {
       if (req.method === 'POST' && req.url === '/add') {
         const body = await readJson(req);
         const headers = {};
+        // Extra request headers the page's player used (tokens, custom auth); never cookies or hop-by-hop ones.
+        if (body.extraHeaders && typeof body.extraHeaders === 'object') {
+          for (const [k, v] of Object.entries(body.extraHeaders)) {
+            if (/^(cookie|host|content-length|connection|range|transfer-encoding)$/i.test(k)) continue;
+            if (typeof v === 'string' && /^[\w-]+$/.test(k) && v.length <= 4096) headers[k] = v;
+          }
+        }
         if (body.referer) headers.Referer = body.referer;
         if (body.cookies) headers.Cookie = body.cookies;
         if (body.userAgent) headers['User-Agent'] = body.userAgent;

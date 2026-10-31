@@ -1,6 +1,7 @@
 'use strict';
 // SwiftFetch on-page button: floats over the largest visible <video>, and on click shows the
-// real resolution list (from yt-dlp via the app) so the user picks one before downloading.
+// real resolution list (from yt-dlp via the app) plus any streams the page-level sniffer caught,
+// so the user picks one before downloading.
 // Built with createElement only: sites like YouTube enforce Trusted Types, which forbids innerHTML.
 (() => {
   if (window.top !== window || window.__swiftfetchInjected) return;
@@ -26,7 +27,7 @@
     .btn.show { display: flex; }
     .btn .ic { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; background: #4f8cff; font-size: 13px; }
     .panel {
-      position: fixed; z-index: 2147483647; display: none; width: 340px; max-height: 70vh; overflow: auto;
+      position: fixed; z-index: 2147483647; display: none; width: 360px; max-height: 70vh; overflow: auto;
       background: #0f1115; color: #e6e9ef; border: 1px solid #262c38; border-radius: 12px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.55); font-size: 13px;
     }
@@ -35,20 +36,25 @@
     .hd img { width: 72px; height: 40px; object-fit: cover; border-radius: 5px; background: #1c212b; flex-shrink: 0; }
     .hd .t { font-weight: 600; line-height: 1.3; max-height: 2.6em; overflow: hidden; }
     .hd .m { color: #8b93a7; font-size: 11px; margin-top: 3px; }
-    .rows { padding: 6px 0; }
+    .sec { padding: 8px 14px 2px; color: #8b93a7; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .rows { padding: 4px 0 6px; }
     .row { display: flex; align-items: center; gap: 10px; padding: 7px 14px; }
     .row:hover { background: #161a22; }
     .row .q { font-weight: 600; min-width: 92px; }
-    .row .s { color: #8b93a7; font-size: 12px; flex: 1; }
-    .row button { background: #4f8cff; color: #fff; border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 12px; font-weight: 600; }
+    .row .s { color: #8b93a7; font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .q.sn { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .row button {
+      background: #4f8cff; color: #fff; border: 0; border-radius: 6px; padding: 5px 11px; cursor: pointer; font-size: 12px; font-weight: 600; flex-shrink: 0;
+    }
     .row button:hover { background: #7fb0ff; }
     .row button:disabled { opacity: .5; cursor: default; }
-    .msg { padding: 16px 14px; color: #8b93a7; line-height: 1.5; }
+    .msg { padding: 12px 14px; color: #8b93a7; line-height: 1.5; word-break: break-word; }
     .msg.err { color: #ff6b6b; }
     .ft { display: flex; justify-content: space-between; padding: 8px 14px; border-top: 1px solid #262c38; font-size: 11px; color: #8b93a7; }
     .ft a { color: #8b93a7; cursor: pointer; text-decoration: none; }
     .ft a:hover { color: #e6e9ef; text-decoration: underline; }
-    .note { padding: 6px 14px 10px; color: #f2b84b; font-size: 11px; line-height: 1.4; }
+    .note { padding: 6px 14px 10px; color: #f2b84b; font-size: 11px; line-height: 1.4; word-break: break-word; }
+    .note.dim { color: #8b93a7; }
     .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #334; border-top-color: #4f8cff; border-radius: 50%; animation: r .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
     @keyframes r { to { transform: rotate(360deg); } }
   `;
@@ -148,7 +154,7 @@
     btn.style.top = top + 'px';
     btn.style.left = left + 'px';
     if (panelOpen) {
-      const pw = 340;
+      const pw = 360;
       panel.style.top = Math.min(top + 40, innerHeight - 120) + 'px';
       panel.style.left = Math.max(8, Math.min(left + bw - pw, innerWidth - pw - 8)) + 'px';
     }
@@ -170,7 +176,6 @@
     if (!patterns.length) return location.href;
 
     const matches = (href) => patterns.some((re) => re.test(href));
-    // If the page itself is already a permalink, prefer it.
     if (matches(location.pathname)) return location.href;
 
     let node = v;
@@ -184,7 +189,6 @@
         try { href = new URL(a.getAttribute('href'), location.origin); } catch { continue; }
         if (href.origin !== location.origin && !/facebook\.com|x\.com|twitter\.com/.test(href.hostname)) continue;
         if (!matches(href.pathname)) continue;
-        // X: the timestamp link is the canonical status link; Facebook: shortest video/post link wins.
         if (a.querySelector('time')) return href.origin + href.pathname;
         if (!best || href.pathname.length < best.pathname.length) best = href;
       }
@@ -195,60 +199,114 @@
     return location.href;
   }
 
+  /* ---------- panel ---------- */
+
+  let openSeq = 0;
+
   async function openPanel() {
     panelOpen = true;
     panel.classList.add('show');
     update();
+    const seq = ++openSeq;
     const url = video ? resolvePostUrl(video) : location.href;
     const pageAtOpen = location.href;
-    render(el('div', { class: 'msg' }, el('span', { class: 'spin' }), 'Analyzing video…'));
-    let r = cache.get(url);
-    if (!r || Date.now() - r.at > 5 * 60 * 1000) {
-      r = await send({ type: 'probePage', url, referer: pageAtOpen });
-      r.at = Date.now();
-      if (r.ok) cache.set(url, r);
-    }
-    if (!panelOpen || location.href !== pageAtOpen) return;
-    if (!r.ok) {
-      render(
-        el('div', { class: 'msg err' }, r.error || 'Could not analyze this page'),
-        r.offline && el('div', { class: 'msg' }, 'Start the SwiftFetch app and click Download again.'),
-        footer(),
-      );
-      return;
-    }
-    const info = r.info;
-    const rows = info.qualities.map((q) => {
-      const sizeEl = el('span', { class: 's' }, (q.size ? '≈ ' + fmtBytes(q.size) : '') + (q.merged ? ' · merge' : ''));
-      const b = el('button', null, 'Download');
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        b.disabled = true;
-        b.textContent = 'Sending…';
-        const res = await send({ type: 'download', url, referer: pageAtOpen, kind: 'video', quality: q.key });
-        b.textContent = res.ok ? 'Sent ✓' : 'Failed';
-        if (res.ok) setTimeout(closePanel, 1200);
-        else { b.disabled = false; sizeEl.textContent = res.error || 'Error'; }
-      });
-      return el('div', { class: 'row' }, el('span', { class: 'q' }, qualityLabel(q)), sizeEl, b);
-    });
-    const shown = Math.max(0, ...info.qualities.map((q) => q.height || 0));
-    const maxH = info.heights?.length ? Math.max(...info.heights) : 0;
-    const note = !r.tools?.ffmpeg && maxH > shown
-      ? el('div', { class: 'note' }, 'Up to ' + maxH + 'p is available once ffmpeg is installed in SwiftFetch → Settings → Video downloads.')
-      : null;
-    const meta = [info.extractor || '', info.uploader, info.duration ? fmtDur(info.duration) : null].filter(Boolean).join(' · ');
-    const srcNote = url !== pageAtOpen ? el('div', { class: 'note', style: 'color:#8b93a7' }, 'Post: ' + url) : null;
-    render(
-      el('div', { class: 'hd' },
+
+    // Two sources in parallel: yt-dlp's view of the page, and whatever the sniffer saw the player fetch.
+    const sniffedP = send({ type: 'sniffedForTab' }).then((r) => (r && r.media) || []).catch(() => []);
+    const cached = cache.get(url);
+    const probeP = cached && Date.now() - cached.at < 5 * 60 * 1000
+      ? Promise.resolve(cached)
+      : send({ type: 'probePage', url, referer: pageAtOpen }).then((r) => { r.at = Date.now(); if (r.ok) cache.set(url, r); return r; });
+
+    const sniffed = await sniffedP;
+    if (seq !== openSeq || !panelOpen) return;
+    renderPanel({ probing: true, probe: null, sniffed, url, pageAtOpen });
+
+    const probe = await probeP;
+    if (seq !== openSeq || !panelOpen || location.href !== pageAtOpen) return;
+    // Streams may have arrived while yt-dlp was thinking.
+    const sniffed2 = await send({ type: 'sniffedForTab' }).then((r) => (r && r.media) || sniffed).catch(() => sniffed);
+    if (seq !== openSeq || !panelOpen) return;
+    renderPanel({ probing: false, probe, sniffed: sniffed2, url, pageAtOpen });
+  }
+
+  function renderPanel({ probing, probe, sniffed, url, pageAtOpen }) {
+    const parts = [];
+
+    if (probing) {
+      parts.push(el('div', { class: 'msg' }, el('span', { class: 'spin' }), 'Analyzing page with yt-dlp…'));
+    } else if (probe && probe.ok) {
+      const info = probe.info;
+      const meta = [info.extractor || '', info.uploader, info.duration ? fmtDur(info.duration) : null].filter(Boolean).join(' · ');
+      parts.push(el('div', { class: 'hd' },
         info.thumbnail && el('img', { src: info.thumbnail, alt: '' }),
         el('div', null, el('div', { class: 't' }, info.title), el('div', { class: 'm' }, meta)),
-      ),
-      el('div', { class: 'rows' }, rows),
-      srcNote,
-      note,
-      footer(),
-    );
+      ));
+      parts.push(el('div', { class: 'rows' }, info.qualities.map((q) => qualityRow(q, url, pageAtOpen))));
+      const shown = Math.max(0, ...info.qualities.map((q) => q.height || 0));
+      const maxH = info.heights?.length ? Math.max(...info.heights) : 0;
+      if (!probe.tools?.ffmpeg && maxH > shown) {
+        parts.push(el('div', { class: 'note' }, 'Up to ' + maxH + 'p is available once ffmpeg is installed in SwiftFetch → Settings → Video downloads.'));
+      }
+      if (url !== pageAtOpen) parts.push(el('div', { class: 'note dim' }, 'Post: ' + url));
+    } else if (probe && probe.offline) {
+      parts.push(el('div', { class: 'msg err' }, 'SwiftFetch is not running. Start the app and click Download again.'));
+    } else if (probe) {
+      const unsupported = /unsupported url/i.test(probe.error || '');
+      parts.push(el('div', { class: 'msg ' + (sniffed.length ? '' : 'err') },
+        unsupported
+          ? 'yt-dlp has no extractor for this page' + (sniffed.length ? ', but the player’s own streams were captured below.' : '.')
+          : (probe.error || 'Could not analyze this page')));
+    }
+
+    const streams = sniffed.filter((m) => m.kind === 'stream');
+    const files = sniffed.filter((m) => m.kind !== 'stream');
+    if (streams.length || files.length) {
+      parts.push(el('div', { class: 'sec' }, 'Detected by the sniffer'));
+      parts.push(el('div', { class: 'rows' },
+        streams.slice(0, 6).map((m) => sniffedRow(m, 'video', pageAtOpen)),
+        files.slice(0, 4).map((m) => sniffedRow(m, 'file', pageAtOpen)),
+      ));
+    } else if (!probing && !(probe && probe.ok)) {
+      parts.push(el('div', { class: 'note dim' }, 'No stream captured yet. Play the video for a few seconds, then click Download again.'));
+    }
+
+    parts.push(footer());
+    render(...parts);
+  }
+
+  function qualityRow(q, url, pageAtOpen) {
+    const sizeEl = el('span', { class: 's' }, (q.size ? '≈ ' + fmtBytes(q.size) : '') + (q.merged ? ' · merge' : ''));
+    const b = el('button', null, 'Download');
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      b.disabled = true;
+      b.textContent = 'Sending…';
+      const res = await send({ type: 'download', url, referer: pageAtOpen, kind: 'video', quality: q.key });
+      b.textContent = res.ok ? 'Sent ✓' : 'Failed';
+      if (res.ok) setTimeout(closePanel, 1200);
+      else { b.disabled = false; sizeEl.textContent = res.error || 'Error'; }
+    });
+    return el('div', { class: 'row' }, el('span', { class: 'q' }, qualityLabel(q)), sizeEl, b);
+  }
+
+  function sniffedRow(m, kind, pageAtOpen) {
+    let hostName = '';
+    try { hostName = new URL(m.url).hostname; } catch { /* ignore */ }
+    const name = m.url.split('/').pop().split('?')[0] || hostName;
+    const label = el('span', { class: 'q sn', title: m.url }, name);
+    const sub = el('span', { class: 's' }, (m.master ? 'master · ' : '') + m.type + (m.size ? ' · ' + fmtBytes(m.size) : '') + (hostName ? ' · ' + hostName : ''));
+    const b = el('button', null, 'Download');
+    b.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      b.disabled = true;
+      b.textContent = 'Sending…';
+      const res = await send({ type: 'download', url: m.url, referer: m.referer || pageAtOpen, kind, headers: m.headers || {} });
+      b.textContent = res.ok ? 'Sent ✓' : 'Failed';
+      if (res.ok) setTimeout(closePanel, 1200);
+      else { b.disabled = false; sub.textContent = res.error || 'Error'; }
+    });
+    return el('div', { class: 'row' }, el('div', { style: 'flex:1;min-width:0;display:flex;flex-direction:column;gap:2px' }, label, sub), b);
   }
 
   function footer() {
@@ -275,6 +333,7 @@
 
   function closePanel() {
     panelOpen = false;
+    openSeq++;
     if (panel) panel.classList.remove('show');
   }
 

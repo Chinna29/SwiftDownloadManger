@@ -10,6 +10,16 @@ const { probe, sanitizeFilename } = require('./http');
 const { categorize, resolveDir } = require('./categories');
 const { writeCookieFile, removeCookieFile } = require('./cookies');
 
+/** Headers other than the ones yt-dlp has dedicated flags for. */
+function extraHeadersOf(headers) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    if (/^(referer|user-agent|cookie)$/i.test(k)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 const PERSIST_FIELDS = [
   'id', 'url', 'finalUrl', 'filename', 'dir', 'filePath', 'size', 'resumable', 'contentType',
   'status', 'downloaded', 'segments', 'segmentCount', 'error', 'headers', 'addedAt', 'completedAt', 'source',
@@ -135,7 +145,7 @@ class Queue extends EventEmitter {
         if (!this.ytdlp || !this.ytdlp.hasYtDlp()) throw new Error('yt-dlp is not installed. Install it from Settings.');
         // Browser cookies travel as a Netscape file that only this job reads; removed when the job ends.
         job.cookiesFile = await writeCookieFile(this.cookiesDir, cookieJar, job.id);
-        const context = { cookiesFile: job.cookiesFile, referer: headers.Referer, userAgent: headers['User-Agent'] };
+        const context = { cookiesFile: job.cookiesFile, referer: headers.Referer, userAgent: headers['User-Agent'], extraHeaders: extraHeadersOf(headers) };
         const info = video || (await this.ytdlp.probe(url, context));
         if (info.isLive) throw new Error('Live streams are not supported yet. Try again once the stream has ended.');
         job.video = {
@@ -286,6 +296,7 @@ class Queue extends EventEmitter {
         cookiesFile: job.cookiesFile,
         referer: job.headers?.Referer,
         userAgent: job.headers?.['User-Agent'],
+        extraHeaders: extraHeadersOf(job.headers),
       })
       : new Download({
         url: job.finalUrl || job.url,

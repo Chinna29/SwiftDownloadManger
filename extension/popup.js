@@ -61,13 +61,13 @@ async function init() {
         const name = m.url.split('/').pop().split('?')[0] || m.url;
         const isStream = m.kind === 'stream';
         row.innerHTML = '<div class="info"><div class="name" title="' + m.url.replace(/"/g, '&quot;') + '">' + name + '</div>' +
-          '<div class="meta">' + m.type + (isStream ? ' · via yt-dlp' : ' · ' + fmtBytes(m.size)) + '</div></div>';
+          '<div class="meta">' + m.type + (isStream ? ' · via yt-dlp' : ' · ' + fmtBytes(m.size)) + (m.sniffed ? ' · sniffed' : '') + '</div></div>';
         const btn = document.createElement('button');
         btn.textContent = 'Download';
         btn.onclick = async () => {
           btn.disabled = true;
           // Streams go through yt-dlp, which stitches the fragments into one file.
-          const r = await send({ type: 'download', url: m.url, referer: tab.url, kind: isStream ? 'video' : 'file' });
+          const r = await send({ type: 'download', url: m.url, referer: m.referer || tab.url, kind: isStream ? 'video' : 'file', headers: m.headers || {} });
           say(r.ok ? 'Sent to SwiftFetch.' : r.error, r.ok);
           btn.disabled = false;
         };

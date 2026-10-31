@@ -94,7 +94,18 @@ async function collectCookieJar(pageUrl, refererUrl) {
   return jar;
 }
 
-async function sendToApp({ url, filename, referer, kind, quality }) {
+// Request headers worth replaying; cookies and hop-by-hop headers are handled separately.
+const HEADER_DENY = /^(cookie|host|content-length|connection|accept-encoding|range|user-agent|referer|origin)$/i;
+function cleanHeaders(h) {
+  const out = {};
+  for (const [k, v] of Object.entries(h || {})) {
+    if (!k || HEADER_DENY.test(k) || typeof v !== 'string' || v.length > 4096) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+async function sendToApp({ url, filename, referer, kind, quality, extraHeaders }) {
   const s = await getSettings();
   const isVideo = kind === 'video';
   const payload = {
@@ -105,6 +116,7 @@ async function sendToApp({ url, filename, referer, kind, quality }) {
     referer: referer || undefined,
     cookies: isVideo ? undefined : await cookieHeader(url),
     cookieJar: isVideo ? await collectCookieJar(url, referer) : undefined,
+    extraHeaders: cleanHeaders(extraHeaders),
     userAgent: navigator.userAgent,
   };
   const r = await fetch(base(s.port, '/add'), {
@@ -225,7 +237,50 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
 /* ---------- media detection ---------- */
 
-const mediaByTab = new Map(); // tabId -> Map(url -> {url, type, size, seenAt})
+// tabId -> Map(url -> entry). The service worker is killed after a short idle, so the
+// cache is mirrored into chrome.storage.session and lazily reloaded.
+const mediaByTab = new Map();
+const mediaLoaded = new Set();
+
+async function loadMedia(tabId) {
+  if (mediaLoaded.has(tabId)) return mediaByTab.get(tabId);
+  mediaLoaded.add(tabId);
+  try {
+    const key = 'media:' + tabId;
+    const stored = (await chrome.storage.session.get(key))[key];
+    if (Array.isArray(stored) && stored.length) mediaByTab.set(tabId, new Map(stored.map((e) => [e.url, e])));
+  } catch { /* storage unavailable */ }
+  return mediaByTab.get(tabId);
+}
+
+function persistMedia(tabId) {
+  const list = mediaByTab.get(tabId);
+  const arr = list ? [...list.values()] : [];
+  chrome.storage.session.set({ ['media:' + tabId]: arr }).catch(() => {});
+}
+
+/** Insert or merge an entry. A "weak" update (from webRequest) never downgrades a sniffed entry. */
+async function upsertMedia(tabId, entry, { weak = false } = {}) {
+  if (tabId < 0) return;
+  let list = await loadMedia(tabId);
+  if (!list) { list = new Map(); mediaByTab.set(tabId, list); }
+  const prev = list.get(entry.url);
+  if (prev && prev.sniffed && weak) {
+    prev.size = Math.max(prev.size || 0, entry.size || 0);
+    prev.seenAt = Date.now();
+  } else {
+    list.set(entry.url, { ...(prev || {}), ...entry, size: Math.max(entry.size || 0, prev?.size || 0) });
+  }
+  while (list.size > 40) list.delete(list.keys().next().value);
+  persistMedia(tabId);
+  updateBadge(tabId);
+}
+
+function clearMedia(tabId) {
+  mediaByTab.delete(tabId);
+  mediaLoaded.add(tabId);
+  chrome.storage.session.remove('media:' + tabId).catch(() => {});
+}
 
 chrome.webRequest.onHeadersReceived.addListener(
   (details) => {
@@ -233,22 +288,21 @@ chrome.webRequest.onHeadersReceived.addListener(
     const headers = Object.fromEntries((details.responseHeaders || []).map((h) => [h.name.toLowerCase(), h.value || '']));
     const ct = (headers['content-type'] || '').split(';')[0].trim();
     const len = Number(headers['content-length'] || 0);
-    const isHls = /mpegurl/i.test(ct) || /\.m3u8(\?|$)/i.test(details.url);
-    const isDash = /dash\+xml/i.test(ct) || /\.mpd(\?|$)/i.test(details.url);
-    const isMedia = MEDIA_TYPES.test(ct) || MEDIA_EXT.test(details.url) || details.type === 'media';
+    // Match extensions on the path only; a page URL like ?src=...m3u8 is not a playlist.
+    let pathOnly = details.url;
+    try { pathOnly = new URL(details.url).pathname; } catch { /* keep raw */ }
+    const isHls = /mpegurl/i.test(ct) || /\.m3u8$/i.test(pathOnly);
+    const isDash = /dash\+xml/i.test(ct) || /\.mpd$/i.test(pathOnly);
+    const isMedia = MEDIA_TYPES.test(ct) || MEDIA_EXT.test(pathOnly + '?') || details.type === 'media';
+    if (details.type === 'main_frame' || details.type === 'sub_frame') { if (!isHls && !isDash && !MEDIA_TYPES.test(ct)) return; }
     if (!isMedia && !isHls && !isDash) return;
     // Individual HLS fragments are noise; the playlist is what yt-dlp needs.
     if (!isHls && !isDash && /\.(ts|m4s|aac)(\?|$)/i.test(details.url) && /\/(seg|segment|chunk|frag|media)[-_]?\d+/i.test(details.url)) return;
 
-    let list = mediaByTab.get(details.tabId);
-    if (!list) { list = new Map(); mediaByTab.set(details.tabId, list); }
     const clean = details.url.split('#')[0];
-    const prev = list.get(clean);
     const kind = isHls || isDash ? 'stream' : 'file';
     const label = isHls ? 'HLS stream (m3u8)' : isDash ? 'DASH stream (mpd)' : (ct || 'media');
-    list.set(clean, { url: clean, type: label, kind, size: Math.max(len, prev?.size || 0), seenAt: Date.now(), referer: details.initiator || '' });
-    if (list.size > 30) list.delete(list.keys().next().value);
-    updateBadge(details.tabId);
+    upsertMedia(details.tabId, { url: clean, type: label, kind, size: len, seenAt: Date.now(), referer: details.initiator || '' }, { weak: true });
   },
   { urls: ['<all_urls>'] },
   ['responseHeaders'],
@@ -260,27 +314,55 @@ function updateBadge(tabId) {
   chrome.action.setBadgeBackgroundColor({ tabId, color: '#4f8cff' });
 }
 
-chrome.tabs.onRemoved.addListener((tabId) => mediaByTab.delete(tabId));
-chrome.webNavigation?.onCommitted?.addListener((d) => {
-  if (d.frameId === 0) { mediaByTab.delete(d.tabId); updateBadge(d.tabId); }
-});
+chrome.tabs.onRemoved.addListener((tabId) => clearMedia(tabId));
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === 'loading' && info.url) { mediaByTab.delete(tabId); updateBadge(tabId); }
+  if (info.status === 'loading' && info.url) { clearMedia(tabId); updateBadge(tabId); }
 });
+
+/* ---------- page-level sniffer reports ---------- */
+
+function recordSniffed(tabId, msg) {
+  if (tabId < 0) return;
+  const isStream = msg.kind === 'hls' || msg.kind === 'hls-master' || msg.kind === 'dash';
+  const label = msg.kind === 'hls-master' ? 'HLS stream (master playlist)'
+    : msg.kind === 'hls' ? 'HLS stream (m3u8)'
+    : msg.kind === 'dash' ? 'DASH stream (mpd)'
+    : (msg.contentType || 'media');
+  upsertMedia(tabId, {
+    url: msg.url,
+    type: label,
+    kind: isStream ? 'stream' : 'file',
+    master: msg.kind === 'hls-master',
+    size: Number(msg.size) || 0,
+    seenAt: Date.now(),
+    referer: msg.frameUrl || msg.topUrl || '',
+    headers: cleanHeaders(msg.headers),
+    sniffed: true,
+  });
+}
 
 /* ---------- popup messaging ---------- */
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === 'sniffed') {
+    recordSniffed(sender.tab ? sender.tab.id : -1, msg);
+    return false;
+  }
   (async () => {
     if (msg.type === 'status') {
       const s = await getSettings();
       sendResponse({ settings: s, online: await ping(s.port) });
-    } else if (msg.type === 'media') {
-      const list = [...(mediaByTab.get(msg.tabId)?.values() || [])].sort((a, b) => b.size - a.size);
+    } else if (msg.type === 'media' || msg.type === 'sniffedForTab') {
+      // Master playlists first (one entry gives every quality), then streams, then files by size.
+      const tabId = msg.type === 'media' ? msg.tabId : (sender.tab ? sender.tab.id : -1);
+      const rank = (m) => (m.master ? 0 : m.kind === 'stream' ? 1 : 2);
+      const stored = await loadMedia(tabId);
+      const list = [...(stored?.values() || [])]
+        .sort((a, b) => rank(a) - rank(b) || b.size - a.size || b.seenAt - a.seenAt);
       sendResponse({ media: list });
     } else if (msg.type === 'download') {
       try {
-        const id = await sendToApp({ url: msg.url, referer: msg.referer, kind: msg.kind, quality: msg.quality });
+        const id = await sendToApp({ url: msg.url, referer: msg.referer, kind: msg.kind, quality: msg.quality, extraHeaders: msg.headers });
         sendResponse({ ok: true, id });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });
