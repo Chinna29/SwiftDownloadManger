@@ -5,6 +5,7 @@ const { Settings } = require('./settings');
 const { Queue } = require('./engine/queue');
 const { SpeedLimiter } = require('./engine/limiter');
 const { probe } = require('./engine/http');
+const { YtDlp, QUALITIES } = require('./engine/ytdlp');
 const { startBridge } = require('./bridge/server');
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
@@ -13,6 +14,7 @@ let queue = null;
 let settings = null;
 let limiter = null;
 let bridge = null;
+let ytdlp = null;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -38,10 +40,12 @@ async function boot() {
     autoStart: true,
     notifyOnComplete: true,
     showOnBrowserAdd: true,
+    videoQuality: 'best',
   });
 
   limiter = new SpeedLimiter(settings.get('speedLimitKB') * 1024);
-  queue = new Queue({ storePath: path.join(userData, 'jobs.json'), settings, limiter });
+  ytdlp = new YtDlp(path.join(userData, 'bin'));
+  queue = new Queue({ storePath: path.join(userData, 'jobs.json'), settings, limiter, ytdlp });
 
   settings.on('change', async (data, before) => {
     limiter.setRate(data.speedLimitKB * 1024);
@@ -138,6 +142,27 @@ function registerIpc() {
   ipcMain.handle('jobs:showInFolder', (_e, id) => {
     const j = queue.get(id);
     if (j && j.filePath) shell.showItemInFolder(j.filePath);
+  });
+
+  ipcMain.handle('video:status', () => ytdlp.status());
+  ipcMain.handle('video:qualities', () => QUALITIES);
+  ipcMain.handle('video:probe', async (_e, url) => {
+    try { return { ok: true, info: await ytdlp.probe(url) }; }
+    catch (e) { return { ok: false, error: e.message }; }
+  });
+  ipcMain.handle('video:install', async (_e, kind) => {
+    const send = (p) => win && !win.isDestroyed() && win.webContents.send('video:install', p);
+    try {
+      await ytdlp.install(kind, send);
+      return { ok: true, status: await ytdlp.status() };
+    } catch (e) {
+      send({ kind, phase: 'error', error: e.message });
+      return { ok: false, error: e.message };
+    }
+  });
+  ipcMain.handle('video:update', async () => {
+    try { return { ok: true, message: await ytdlp.update(), status: await ytdlp.status() }; }
+    catch (e) { return { ok: false, error: e.message }; }
   });
 
   ipcMain.handle('settings:get', () => settings.get());

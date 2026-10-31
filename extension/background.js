@@ -44,13 +44,14 @@ async function cookieHeader(url) {
   }
 }
 
-async function sendToApp({ url, filename, referer }) {
+async function sendToApp({ url, filename, referer, kind }) {
   const s = await getSettings();
   const payload = {
     url,
+    kind: kind || 'file',
     filename: filename || undefined,
     referer: referer || undefined,
-    cookies: await cookieHeader(url),
+    cookies: kind === 'video' ? undefined : await cookieHeader(url),
     userAgent: navigator.userAgent,
   };
   const r = await fetch(base(s.port, '/add'), {
@@ -104,14 +105,16 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: 'sf-link', title: 'Download link with SwiftFetch', contexts: ['link'] });
     chrome.contextMenus.create({ id: 'sf-media', title: 'Download media with SwiftFetch', contexts: ['image', 'video', 'audio'] });
-    chrome.contextMenus.create({ id: 'sf-page', title: 'Download this page URL with SwiftFetch', contexts: ['page'] });
+    chrome.contextMenus.create({ id: 'sf-page', title: 'Download video from this page with SwiftFetch', contexts: ['page', 'video'] });
+    chrome.contextMenus.create({ id: 'sf-link-video', title: 'Download link as video with SwiftFetch', contexts: ['link'] });
   });
 });
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  const url = info.menuItemId === 'sf-link' ? info.linkUrl
+  const url = info.menuItemId === 'sf-link' || info.menuItemId === 'sf-link-video' ? info.linkUrl
     : info.menuItemId === 'sf-media' ? info.srcUrl
     : info.pageUrl;
+  const kind = info.menuItemId === 'sf-page' || info.menuItemId === 'sf-link-video' ? 'video' : 'file';
   if (!url || !/^https?:/i.test(url)) return;
   const s = await getSettings();
   if (!(await ping(s.port))) {
@@ -119,7 +122,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     return;
   }
   try {
-    await sendToApp({ url, referer: tab?.url });
+    await sendToApp({ url, referer: tab?.url, kind });
   } catch (e) {
     notify('SwiftFetch', e.message);
   }
@@ -177,7 +180,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ media: list });
     } else if (msg.type === 'download') {
       try {
-        const id = await sendToApp({ url: msg.url, referer: msg.referer });
+        const id = await sendToApp({ url: msg.url, referer: msg.referer, kind: msg.kind });
         sendResponse({ ok: true, id });
       } catch (e) {
         sendResponse({ ok: false, error: e.message });

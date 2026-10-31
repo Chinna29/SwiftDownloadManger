@@ -29,6 +29,7 @@ export default function JobRow({ job, selected, onSelect }) {
         <div className="job-title">
           <span className="job-name" title={job.filePath || job.url}>{job.filename || job.url}</span>
           <span className={'pill ' + job.status}>{STATUS_LABEL[job.status] || job.status}</span>
+          {job.kind === 'video' && <span className="pill video">video{job.quality && job.quality !== 'best' ? ' · ' + (job.quality === 'audio' ? 'audio' : job.quality + 'p') : ''}</span>}
           {job.source === 'browser' && <span className="pill src">browser</span>}
         </div>
         <SegmentBar job={job} />
@@ -37,11 +38,13 @@ export default function JobRow({ job, selected, onSelect }) {
           <span>{job.size ? pct.toFixed(1) + '%' : ''}</span>
           {job.status === 'downloading' && <span>{speed(job.speed)}</span>}
           {job.status === 'downloading' && <span>ETA {eta(job.eta)}</span>}
+          {job.status === 'downloading' && job.kind === 'video' && job.stage && <span className="dim">{job.stage}</span>}
           {job.status === 'completed' && <span>{when(job.completedAt)}</span>}
           {job.status === 'failed' && <span className="err" title={job.error}>{job.error}</span>}
-          {job.status !== 'downloading' && job.status !== 'failed' && job.status !== 'completed' && (
+          {job.status !== 'downloading' && job.status !== 'failed' && job.status !== 'completed' && job.kind !== 'video' && (
             <span className="dim">{job.resumable ? (job.segments?.length || job.segmentCount) + ' segments' : 'single stream'}</span>
           )}
+          {job.kind === 'video' && job.video?.uploader && <span className="dim">{job.video.uploader}</span>}
         </div>
       </div>
 
@@ -70,6 +73,7 @@ export default function JobRow({ job, selected, onSelect }) {
           {job.finalUrl && job.finalUrl !== job.url && <div><label>Final URL</label><span className="mono">{job.finalUrl}</span></div>}
           <div><label>Saved to</label><span className="mono">{job.filePath || job.dir}</span></div>
           <div><label>Type</label><span>{job.contentType || '—'}</span></div>
+          {job.kind === 'video' && <div><label>Source</label><span>{job.video?.extractor || 'yt-dlp'}{job.video?.id ? ' · ' + job.video.id : ''}</span></div>}
           <div><label>Resumable</label><span>{job.resumable ? 'Yes' : 'No'}</span></div>
           <div><label>Added</label><span>{when(job.addedAt)}</span></div>
         </div>

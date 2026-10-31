@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld('sf', {
     get: invoke('settings:get'),
     set: invoke('settings:set'),
   },
+  video: {
+    status: invoke('video:status'),
+    qualities: invoke('video:qualities'),
+    probe: invoke('video:probe'),
+    install: invoke('video:install'),
+    update: invoke('video:update'),
+    onInstall: (cb) => subscribe('video:install', cb),
+  },
   bridge: {
     status: invoke('bridge:status'),
     onStatus: (cb) => subscribe('bridge:status', cb),

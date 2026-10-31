@@ -40,8 +40,8 @@ async function init() {
 
   $('dlPage').onclick = async () => {
     if (!tab?.url || !/^https?:/i.test(tab.url)) return say('This page URL cannot be downloaded.', false);
-    const r = await send({ type: 'download', url: tab.url, referer: tab.url });
-    say(r.ok ? 'Sent to SwiftFetch.' : r.error, r.ok);
+    const r = await send({ type: 'download', url: tab.url, referer: tab.url, kind: 'video' });
+    say(r.ok ? 'Sent to SwiftFetch as a video download.' : r.error, r.ok);
   };
 
   if (tab) {

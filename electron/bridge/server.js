@@ -43,6 +43,8 @@ function startBridge({ port, version, queue, onAdded }) {
           filename: body.filename || undefined,
           headers,
           source: 'browser',
+          kind: body.kind === 'video' ? 'video' : 'file',
+          quality: body.quality || undefined,
         });
         if (onAdded) onAdded(id);
         return json(res, 200, { ok: true, id });
