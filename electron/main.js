@@ -269,6 +269,7 @@ function registerIpc() {
   ipcMain.handle('jobs:pauseAll', () => queue.pauseAll());
   ipcMain.handle('jobs:resumeAll', () => queue.resumeAll());
   ipcMain.handle('jobs:clearCompleted', () => queue.clearCompleted());
+  ipcMain.handle('jobs:clearFailed', () => queue.clearFailed());
   ipcMain.handle('jobs:openFile', (_e, id) => {
     const j = queue.get(id);
     return j && j.status === 'completed' ? shell.openPath(j.filePath) : null;

@@ -442,6 +442,13 @@ class Queue extends EventEmitter {
     this._changed();
   }
 
+  async clearFailed() {
+    for (const j of [...this.jobs.values()]) {
+      if (j.status === 'failed' || j.status === 'cancelled') await this.remove(j.id, false);
+    }
+    this._changed();
+  }
+
   async shutdown() {
     const pending = [...this.active.values()].map(
       (dl) => new Promise((resolve) => {

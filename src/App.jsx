@@ -67,6 +67,7 @@ export default function App() {
           <button onClick={() => sf.jobs.resumeAll()} disabled={!anyPaused}>Resume all</button>
           <button onClick={() => sf.jobs.pauseAll()} disabled={!anyActive}>Pause all</button>
           <button onClick={() => sf.jobs.clearCompleted()} disabled={!counts.completed}>Clear completed</button>
+          <button onClick={() => sf.jobs.clearFailed()} disabled={!counts.failed}>Clear failed</button>
           <span className="spacer" />
           <input className="search" placeholder="Search…" value={query} onChange={(e) => setQuery(e.target.value)} />
           <button onClick={() => setShowSettings(true)} title="Settings">⚙</button>

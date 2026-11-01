@@ -139,9 +139,19 @@ const handled = new Set();
 // Downloads Chrome must finish itself (blob:, data:); once complete, the file is moved into SwiftDM.
 const relayIds = new Map(); // downloadId -> { url, referer, startedAt }
 
+/** True only for a download the user just started, not one Chrome replays from its history at startup. */
+function isFreshDownload(item) {
+  if (item.state !== 'in_progress') return false;
+  const started = Date.parse(item.startTime || '') || 0;
+  return started > 0 && Date.now() - started < 15000;
+}
+
 chrome.downloads.onCreated.addListener(async (item) => {
   if (handled.has(item.id)) return;
   handled.add(item.id);
+  // Chrome dispatches onCreated for every history entry when it starts; those must be ignored,
+  // or old downloads get re-sent to the app and erased from Chrome's history.
+  if (!isFreshDownload(item)) return;
 
   const s = await getSettings();
   if (!s.enabled) return;

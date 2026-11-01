@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('sf', {
     pauseAll: invoke('jobs:pauseAll'),
     resumeAll: invoke('jobs:resumeAll'),
     clearCompleted: invoke('jobs:clearCompleted'),
+    clearFailed: invoke('jobs:clearFailed'),
     openFile: invoke('jobs:openFile'),
     showInFolder: invoke('jobs:showInFolder'),
     onChange: (cb) => subscribe('jobs:changed', cb),
