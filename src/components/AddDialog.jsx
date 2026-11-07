@@ -8,12 +8,29 @@ function duration(s) {
   return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(sec).padStart(2, '0');
 }
 
+const HASH_NAMES = { md5: 'MD5', sha1: 'SHA-1', sha256: 'SHA-256', sha512: 'SHA-512' };
+const HASH_BY_LEN = { 32: 'MD5', 40: 'SHA-1', 64: 'SHA-256', 128: 'SHA-512' };
+
+/** Mirror the engine's parsing so the dialog can tell the user what will be verified. */
+function detectChecksumAlgo(input) {
+  const str = String(input || '').trim();
+  const m = /^([a-z0-9]+)\s*[:=]\s*(.+)$/i.exec(str);
+  let algo = null;
+  let hex = str;
+  if (m) { algo = m[1].toLowerCase(); hex = m[2]; }
+  hex = hex.replace(/[\s:-]/g, '').toLowerCase();
+  if (!/^[0-9a-f]+$/.test(hex)) return null;
+  if (algo) return HASH_NAMES[algo] && HASH_BY_LEN[hex.length] === HASH_NAMES[algo] ? HASH_NAMES[algo] : null;
+  return HASH_BY_LEN[hex.length] || null;
+}
+
 export default function AddDialog({ settings, onClose }) {
   const sf = window.sf;
   const [url, setUrl] = useState('');
   const [filename, setFilename] = useState('');
   const [dir, setDir] = useState(settings.downloadDir);
   const [segments, setSegments] = useState(settings.segments);
+  const [checksum, setChecksum] = useState('');
   const [startNow, setStartNow] = useState(settings.autoStart);
   const [info, setInfo] = useState(null);
   const [probing, setProbing] = useState(false);
@@ -77,6 +94,7 @@ export default function AddDialog({ settings, onClose }) {
 
   const looksLikePage = info && /^text\/html/i.test(info.contentType || '');
   const ytdlpReady = !!tools?.ytdlp;
+  const checksumAlgo = detectChecksumAlgo(checksum);
 
   const analyze = async () => {
     setVideoError('');
@@ -107,7 +125,7 @@ export default function AddDialog({ settings, onClose }) {
     if (mode === 'video' && video) {
       await sf.jobs.add({ kind: 'video', url: url.trim(), dir, video, quality, autoStart: startNow });
     } else {
-      await sf.jobs.add({ url: url.trim(), filename: filename.trim() || undefined, dir, segments, autoStart: startNow });
+      await sf.jobs.add({ url: url.trim(), filename: filename.trim() || undefined, dir, segments, checksum: checksum.trim() || undefined, autoStart: startNow });
     }
     onClose();
   };
@@ -210,6 +228,18 @@ export default function AddDialog({ settings, onClose }) {
             <span>Segments</span>
             <input type="range" min="1" max="32" value={segments} onChange={(e) => setSegments(Number(e.target.value))} />
             <b>{segments}</b>
+          </label>
+        )}
+
+        {mode === 'file' && (
+          <label className="field">
+            <span>Checksum <span className="dim small">(optional)</span></span>
+            <input value={checksum} onChange={(e) => setChecksum(e.target.value)} placeholder="sha256:… or paste an MD5 / SHA hash" spellCheck={false} />
+            {checksum.trim() && (
+              checksumAlgo
+                ? <span className="ok small">Verifies the finished file against this {checksumAlgo} hash.</span>
+                : <span className="warn small">Not a recognized MD5 / SHA-1 / SHA-256 / SHA-512 hash — it will be ignored.</span>
+            )}
           </label>
         )}
 

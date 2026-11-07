@@ -11,12 +11,29 @@ const ICONS = {
   remove: '✕',
 };
 
+/** Pill shown for a job that carried an expected hash. Null once nothing to show. */
+function checksumBadge(cs) {
+  if (!cs || cs.state === 'pending') return null;
+  const algo = (cs.algo || '').toUpperCase();
+  switch (cs.state) {
+    case 'verifying':
+      return { cls: 'verifying', text: 'verifying…', title: 'Checking the ' + algo + ' hash of the finished file' };
+    case 'verified':
+      return { cls: 'verified', text: '✓ ' + algo, title: algo + ' verified · ' + cs.actual };
+    case 'mismatch':
+      return { cls: 'mismatch', text: '⚠ ' + algo + ' mismatch', title: 'Expected ' + cs.expected + '\nGot      ' + (cs.actual || '—') };
+    default:
+      return { cls: 'unverified', text: algo + ' not verified', title: cs.error || 'Could not read the file to verify it' };
+  }
+}
+
 export default function JobRow({ job, selected, onSelect }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const sf = window.sf;
   const pct = percent(job);
   const canPause = job.status === 'downloading' || job.status === 'queued';
   const canResume = job.status === 'paused' || job.status === 'failed' || job.status === 'cancelled';
+  const csBadge = checksumBadge(job.checksum);
 
   const remove = (deleteFile) => {
     sf.jobs.remove(job.id, deleteFile);
@@ -31,6 +48,7 @@ export default function JobRow({ job, selected, onSelect }) {
           <span className={'pill ' + job.status}>{STATUS_LABEL[job.status] || job.status}</span>
           {job.kind === 'video' && <span className="pill video">video{job.quality && job.quality !== 'best' ? ' · ' + (job.quality === 'audio' ? 'audio' : job.quality + 'p') : ''}</span>}
           {job.source === 'browser' && <span className="pill src">{job.imported ? 'moved from browser' : 'browser'}</span>}
+          {csBadge && <span className={'pill ' + csBadge.cls} title={csBadge.title}>{csBadge.text}</span>}
         </div>
         <SegmentBar job={job} />
         <div className="job-meta">
@@ -75,6 +93,19 @@ export default function JobRow({ job, selected, onSelect }) {
           <div><label>Type</label><span>{job.contentType || '—'}</span></div>
           {job.kind === 'video' && <div><label>Source</label><span>{job.video?.extractor || 'yt-dlp'}{job.video?.id ? ' · ' + job.video.id : ''}</span></div>}
           <div><label>Resumable</label><span>{job.resumable ? 'Yes' : 'No'}</span></div>
+          {job.checksum && (
+            <div>
+              <label>Checksum</label>
+              <span className="mono" title={job.checksum.actual || job.checksum.error || ''}>
+                {(job.checksum.algo || '').toUpperCase()}
+                {job.checksum.state === 'verified' && ' · verified ✓'}
+                {job.checksum.state === 'mismatch' && ' · mismatch ⚠'}
+                {job.checksum.state === 'verifying' && ' · verifying…'}
+                {job.checksum.state === 'unverified' && ' · not verified'}
+                {job.checksum.state === 'pending' && ' · ' + job.checksum.expected}
+              </span>
+            </div>
+          )}
           <div><label>Added</label><span>{when(job.addedAt)}</span></div>
         </div>
       )}

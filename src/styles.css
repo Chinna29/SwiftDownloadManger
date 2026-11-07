@@ -114,6 +114,10 @@ input:focus { border-color: var(--accent); }
 .pill.failed { color: var(--err); border-color: #6b2b2b; background: #2b1616; }
 .pill.paused, .pill.cancelled { color: var(--warn); border-color: #6b5420; background: #2b2412; }
 .pill.src { font-style: italic; }
+.pill.verified { color: var(--ok); border-color: #1f5a37; background: #122a1c; }
+.pill.mismatch { color: var(--err); border-color: #6b2b2b; background: #2b1616; }
+.pill.verifying { color: var(--accent-2); border-color: #2b4a80; background: #16233a; }
+.pill.unverified { color: var(--warn); border-color: #6b5420; background: #2b2412; }
 
 .segbar { position: relative; width: 100%; background: var(--seg-bg); border-radius: 4px; overflow: hidden; }
 .seg { position: absolute; top: 0; bottom: 0; }

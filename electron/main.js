@@ -79,7 +79,11 @@ async function boot() {
   queue.on('change', (snap) => win && !win.isDestroyed() && win.webContents.send('jobs:changed', snap));
   queue.on('completed', (job) => {
     if (settings.get('notifyOnComplete') && Notification.isSupported()) {
-      const n = new Notification({ title: 'Download complete', body: job.filename });
+      const mismatch = job.checksum && job.checksum.state === 'mismatch';
+      const n = new Notification({
+        title: mismatch ? 'Download complete — checksum mismatch' : 'Download complete',
+        body: mismatch ? job.filename + ' does not match the expected ' + job.checksum.algo + ' hash' : job.filename,
+      });
       n.on('click', () => shell.showItemInFolder(job.filePath));
       n.show();
     }

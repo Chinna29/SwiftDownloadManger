@@ -2,8 +2,12 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { request } = require('./http');
+
+/** Hash algorithms we verify against, keyed by the hex length of their digest. */
+const CHECKSUM_ALGOS = { md5: 32, sha1: 40, sha256: 64, sha512: 128 };
 
 const PART_EXT = '.sfdownload';
 const STATE_EXT = '.sfpart';
@@ -30,6 +34,7 @@ class Download extends EventEmitter {
     this.resumable = !!opts.resumable;
     this.limiter = opts.limiter || null;
     this.maxRetries = opts.maxRetries ?? 8;
+    this.checksum = normalizeChecksum(opts.checksum);
 
     this.partPath = this.filePath + PART_EXT;
     this.statePath = this.filePath + STATE_EXT;
@@ -136,7 +141,14 @@ class Download extends EventEmitter {
       await fsp.rename(this.partPath, this.filePath);
       await fsp.rm(this.statePath, { force: true });
       this._emitProgress();
-      this.emit('complete', { filePath: this.filePath, size: this.downloaded });
+      let checksum = null;
+      if (this.checksum) {
+        this.emit('verifying', { algo: this.checksum.algo });
+        checksum = await this._verifyChecksum();
+        this.emit('log', 'Checksum (' + checksum.algo + '): ' +
+          (checksum.ok === true ? 'verified' : checksum.ok === false ? 'MISMATCH' : 'could not verify'));
+      }
+      this.emit('complete', { filePath: this.filePath, size: this.downloaded, checksum });
     } catch (err) {
       this._stopProgressTimer();
       this.stopped = true;
@@ -253,6 +265,26 @@ class Download extends EventEmitter {
     }
   }
 
+  /* ---------- checksum verification ---------- */
+
+  /**
+   * Stream the finished file through the requested hash and compare it to the
+   * expected digest. Never throws: a read failure returns ok:null so a verified
+   * download is never confused with one that simply could not be checked.
+   */
+  async _verifyChecksum() {
+    const { algo, expected } = this.checksum;
+    try {
+      const hash = crypto.createHash(algo);
+      const rs = fs.createReadStream(this.filePath);
+      for await (const chunk of rs) hash.update(chunk);
+      const actual = hash.digest('hex').toLowerCase();
+      return { algo, expected, actual, ok: actual === expected };
+    } catch (e) {
+      return { algo, expected, actual: null, ok: null, error: e.message };
+    }
+  }
+
   /* ---------- progress ---------- */
 
   _startProgressTimer() {
@@ -287,4 +319,36 @@ class Download extends EventEmitter {
   }
 }
 
-module.exports = { Download, PART_EXT, STATE_EXT };
+/**
+ * Accept an expected checksum as either { algo, expected } or a loose string
+ * ("sha256:abcd…", "abcd…", or with embedded spaces) and resolve it to a clean
+ * { algo, expected } pair. The algorithm may be named explicitly or inferred
+ * from the digest length. Returns null when nothing usable was supplied.
+ */
+function normalizeChecksum(input) {
+  if (!input) return null;
+  let algo = null;
+  let hex = '';
+  if (typeof input === 'object') {
+    algo = input.algo ? String(input.algo).toLowerCase() : null;
+    hex = String(input.expected || input.value || '');
+  } else {
+    const str = String(input).trim();
+    const m = /^([a-z0-9]+)\s*[:=]\s*(.+)$/i.exec(str);
+    if (m && CHECKSUM_ALGOS[m[1].toLowerCase()]) {
+      algo = m[1].toLowerCase();
+      hex = m[2];
+    } else {
+      hex = str;
+    }
+  }
+  hex = hex.replace(/[\s:-]/g, '').toLowerCase();
+  if (!/^[0-9a-f]+$/.test(hex)) return null;
+  if (!algo) {
+    algo = Object.keys(CHECKSUM_ALGOS).find((a) => CHECKSUM_ALGOS[a] === hex.length) || null;
+  }
+  if (!algo || !CHECKSUM_ALGOS[algo] || hex.length !== CHECKSUM_ALGOS[algo]) return null;
+  return { algo, expected: hex };
+}
+
+module.exports = { Download, PART_EXT, STATE_EXT, CHECKSUM_ALGOS, normalizeChecksum };

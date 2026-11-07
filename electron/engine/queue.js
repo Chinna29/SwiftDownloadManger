@@ -4,7 +4,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
-const { Download, PART_EXT, STATE_EXT } = require('./downloader');
+const { Download, PART_EXT, STATE_EXT, normalizeChecksum } = require('./downloader');
 const { VideoDownload } = require('./ytdlp');
 const { probe, sanitizeFilename } = require('./http');
 const { categorize, resolveDir } = require('./categories');
@@ -23,7 +23,7 @@ function extraHeadersOf(headers) {
 const PERSIST_FIELDS = [
   'id', 'url', 'finalUrl', 'filename', 'dir', 'filePath', 'size', 'resumable', 'contentType',
   'status', 'downloaded', 'segments', 'segmentCount', 'error', 'headers', 'addedAt', 'completedAt', 'source',
-  'kind', 'video', 'quality', 'stage', 'category', 'cookiesFile', 'container', 'imported',
+  'kind', 'video', 'quality', 'stage', 'category', 'cookiesFile', 'container', 'imported', 'checksum',
 ];
 
 /**
@@ -105,9 +105,12 @@ class Queue extends EventEmitter {
 
   /* ---------- adding ---------- */
 
-  async add({ url, filename, dir, headers = {}, segments, autoStart = true, source = 'app', kind = 'file', video = null, quality = null, cookieJar = null }) {
+  async add({ url, filename, dir, headers = {}, segments, autoStart = true, source = 'app', kind = 'file', video = null, quality = null, cookieJar = null, checksum = null }) {
     url = String(url || '').trim();
     if (!/^https?:\/\//i.test(url)) throw new Error('Only http(s) URLs are supported');
+
+    // Expected hash is verified only for plain files; yt-dlp jobs are remuxed and have no fixed digest.
+    const expectedChecksum = kind === 'file' ? normalizeChecksum(checksum) : null;
 
     const job = {
       id: crypto.randomUUID(),
@@ -136,6 +139,9 @@ class Queue extends EventEmitter {
       stage: null,
       cookiesFile: null,
       container: null,
+      checksum: expectedChecksum
+        ? { algo: expectedChecksum.algo, expected: expectedChecksum.expected, actual: null, state: 'pending' }
+        : null,
     };
     this.jobs.set(job.id, job);
     this._changed();
@@ -306,6 +312,7 @@ class Queue extends EventEmitter {
         size: job.size,
         resumable: job.resumable,
         limiter: this.limiter,
+        checksum: job.checksum,
       });
     this.active.set(job.id, dl);
     job.status = 'downloading';
@@ -322,6 +329,11 @@ class Queue extends EventEmitter {
       this._changed(false);
     });
     dl.on('log', (msg) => console.log('[' + job.filename + '] ' + msg));
+    dl.on('verifying', () => {
+      if (job.checksum) job.checksum.state = 'verifying';
+      job.stage = 'verifying checksum';
+      this._changed(false);
+    });
     dl.on('paused', () => {
       this.active.delete(job.id);
       if (this.jobs.has(job.id)) {
@@ -345,6 +357,13 @@ class Queue extends EventEmitter {
         if (r.size != null) job.size = r.size;
       }
       job.downloaded = job.size ?? job.downloaded;
+      if (r && r.checksum) {
+        const { algo, expected, actual, ok, error } = r.checksum;
+        job.checksum = {
+          algo, expected, actual, error: error || null,
+          state: ok === true ? 'verified' : ok === false ? 'mismatch' : 'unverified',
+        };
+      }
       if (job.cookiesFile) {
         removeCookieFile(job.cookiesFile);
         job.cookiesFile = null;
@@ -392,9 +411,9 @@ class Queue extends EventEmitter {
       this.tick();
     } else if (job.status === 'failed' && !restartable) {
       // Probe failed earlier: re-add from scratch.
-      const { url, filename, dir, headers, segmentCount, source, kind, quality } = job;
+      const { url, filename, dir, headers, segmentCount, source, kind, quality, checksum } = job;
       this.jobs.delete(id);
-      this.add({ url, filename, dir, headers, segments: segmentCount, source, kind, quality });
+      this.add({ url, filename, dir, headers, segments: segmentCount, source, kind, quality, checksum });
     }
   }
 
