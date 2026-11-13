@@ -361,6 +361,37 @@
     while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
     return n.toFixed(i >= 2 ? 1 : 0) + ' ' + u[i];
   }
+  // Link grabber: every link (or only those inside the selection) for "Download all/selected links".
+  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+    if (!msg || msg.type !== 'collectLinks') return false;
+    const sel = window.getSelection();
+    const range = msg.selectionOnly && sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null;
+    if (msg.selectionOnly && !range) { reply({ links: [] }); return false; }
+    const seen = new Set();
+    const links = [];
+    const push = (href, text) => {
+      if (!href || seen.has(href) || !/^(https?|ftp|ftps|magnet):/i.test(href)) return;
+      if (/^https?:/i.test(href)) { try { const u = new URL(href); if (u.href.split('#')[0] === location.href.split('#')[0]) return; } catch { return; } }
+      seen.add(href);
+      links.push({ url: href, text: (text || '').trim().slice(0, 200) });
+    };
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (range && !range.intersectsNode(a)) continue;
+      push(a.href, a.textContent || a.title || a.getAttribute('aria-label'));
+    }
+    for (const m of document.querySelectorAll('img[src], video[src], audio[src], source[src]')) {
+      if (range && !range.intersectsNode(m)) continue;
+      if (m.tagName === 'IMG' && (m.naturalWidth || 0) < 120) continue; // skip icons
+      push(m.currentSrc || m.src, m.alt || m.title);
+    }
+    if (range && !links.length) {
+      // Plain-text URLs inside the selection.
+      for (const m of String(sel).matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) push(m[0], '');
+    }
+    reply({ links: links.slice(0, 2000) });
+    return false;
+  });
+
   function fmtDur(s) {
     s = Math.round(s);
     const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;

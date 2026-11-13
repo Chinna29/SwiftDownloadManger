@@ -61,7 +61,7 @@ async function init() {
         const name = m.url.split('/').pop().split('?')[0] || m.url;
         const isStream = m.kind === 'stream';
         row.innerHTML = '<div class="info"><div class="name" title="' + m.url.replace(/"/g, '&quot;') + '">' + name + '</div>' +
-          '<div class="meta">' + m.type + (isStream ? ' · via yt-dlp' : ' · ' + fmtBytes(m.size)) + (m.sniffed ? ' · sniffed' : '') + '</div></div>';
+          '<div class="meta">' + m.type + (isStream ? ' · playlist · size known after start' : ' · ' + fmtBytes(m.size)) + (m.sniffed ? ' · sniffed' : '') + '</div></div>';
         const btn = document.createElement('button');
         btn.textContent = 'Download';
         btn.onclick = async () => {

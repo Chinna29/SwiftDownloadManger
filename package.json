@@ -1,7 +1,7 @@
 {
   "name": "swiftfetch",
   "productName": "SwiftFetch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open-source segmented download manager with pause/resume, queue and browser integration",
   "main": "electron/main.js",
   "private": true,
@@ -21,8 +21,13 @@
     "vite": "^5.4.11"
   },
   "dependencies": {
+    "adm-zip": "^0.6.1",
+    "basic-ftp": "^6.2.6",
+    "https-proxy-agent": "^7.0.6",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "socks-proxy-agent": "^8.0.5",
+    "webtorrent": "^2.8.5"
   },
   "build": {
     "appId": "com.swiftfetch.app",
@@ -45,5 +50,8 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
+  },
+  "overrides": {
+    "uint8-util": "2.2.6"
   }
 }

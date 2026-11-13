@@ -11,7 +11,9 @@ const { writeCookieFile, removeCookieFile } = require('../engine/cookies');
  * Only extension origins (or requests with no Origin, e.g. curl) are accepted,
  * so a random web page cannot push downloads into the app.
  */
-function startBridge({ port, version, queue, ytdlp, cookiesDir, onAdded }) {
+const { extractLinks, groupIntoPackages } = require('../engine/links');
+
+function startBridge({ port, version, queue, ytdlp, cookiesDir, onAdded, onLinks }) {
   const server = http.createServer(async (req, res) => {
     const origin = req.headers.origin || '';
     const allowed = !origin || /^(chrome|moz|edge|safari-web)-extension:\/\//i.test(origin);
@@ -53,6 +55,15 @@ function startBridge({ port, version, queue, ytdlp, cookiesDir, onAdded }) {
       if (req.method === 'GET' && req.url === '/jobs') {
         return json(res, 200, { ok: true, jobs: queue.snapshot() });
       }
+      if (req.method === 'POST' && req.url === '/links') {
+        // "Download all/selected links" from the extension: open the Link grabber in the app.
+        const body = await readJson(req);
+        const raw = Array.isArray(body.links) ? body.links : extractLinks(String(body.text || ''), body.pageUrl || null);
+        const list = raw.map((l) => (typeof l === 'string' ? { url: l } : l)).filter((l) => l && l.url)
+          .map((l) => ({ ...l, referer: l.referer || body.pageUrl || undefined, cookie: l.cookie || body.cookies || undefined }));
+        if (onLinks) onLinks({ title: body.title || body.pageUrl || 'Links from the browser', pageUrl: body.pageUrl, links: list, packages: groupIntoPackages(list), userAgent: body.userAgent });
+        return json(res, 200, { ok: true, count: list.length });
+      }
       if (req.method === 'POST' && req.url === '/import') {
         // The browser finished a download it had to do itself (blob:, data:, form POST);
         // move the finished file into the SwiftDM folders and record it as completed.
@@ -81,9 +92,10 @@ function startBridge({ port, version, queue, ytdlp, cookiesDir, onAdded }) {
           filename: body.filename || undefined,
           headers,
           source: 'browser',
-          kind: body.kind === 'video' ? 'video' : 'file',
+          kind: body.kind === 'video' ? 'video' : undefined,
           quality: body.quality || undefined,
           cookieJar: Array.isArray(body.cookieJar) ? body.cookieJar : null,
+          onDuplicate: body.onDuplicate || 'auto',
         });
         if (onAdded) onAdded(id);
         return json(res, 200, { ok: true, id });

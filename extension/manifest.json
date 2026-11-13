@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SwiftFetch Integration",
-  "version": "0.1.0",
-  "description": "Sends downloads from the browser to the SwiftFetch download manager, with right-click download and media detection.",
+  "version": "0.2.0",
+  "description": "Sends downloads from the browser to the SwiftFetch download manager, with right-click download, link grabbing and media detection.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

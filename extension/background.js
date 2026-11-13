@@ -224,10 +224,28 @@ chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({ id: 'sf-media', title: 'Download media with SwiftFetch', contexts: ['image', 'video', 'audio'] });
     chrome.contextMenus.create({ id: 'sf-page', title: 'Download video from this page with SwiftFetch', contexts: ['page', 'video'] });
     chrome.contextMenus.create({ id: 'sf-link-video', title: 'Download link as video with SwiftFetch', contexts: ['link'] });
+    chrome.contextMenus.create({ id: 'sf-all-links', title: 'Download all links with SwiftFetch', contexts: ['page', 'frame'] });
+    chrome.contextMenus.create({ id: 'sf-sel-links', title: 'Download selected links with SwiftFetch', contexts: ['selection'] });
   });
 });
 
+// "Download all / selected links": the content script collects the anchors, the app opens its Link grabber.
+async function sendLinks(tab, selectionOnly) {
+  const s = await getSettings();
+  if (!(await ping(s.port))) { notify('SwiftFetch is not running', 'Start the SwiftFetch app and try again.'); return; }
+  let r = null;
+  try { r = await chrome.tabs.sendMessage(tab.id, { type: 'collectLinks', selectionOnly }); } catch { /* no content script on this page */ }
+  if (!r || !r.links || !r.links.length) { notify('SwiftFetch', selectionOnly ? 'No links in the selection.' : 'No links found on this page.'); return; }
+  const res = await fetch(base(s.port, '/links'), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ links: r.links, pageUrl: tab.url, title: tab.title, cookies: await cookieHeader(tab.url), userAgent: navigator.userAgent }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!j.ok) notify('SwiftFetch', j.error || 'The app rejected the links.');
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId === 'sf-all-links' || info.menuItemId === 'sf-sel-links') { await sendLinks(tab, info.menuItemId === 'sf-sel-links'); return; }
   const url = info.menuItemId === 'sf-link' || info.menuItemId === 'sf-link-video' ? info.linkUrl
     : info.menuItemId === 'sf-media' ? info.srcUrl
     : info.pageUrl;

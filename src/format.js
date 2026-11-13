@@ -48,3 +48,26 @@ export const STATUS_LABEL = {
   cancelled: 'Cancelled',
   cancelling: 'Cancelling',
 };
+
+STATUS_LABEL.waiting = 'Waiting';
+
+export function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
+export function nameFromUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'magnet:') { const m = /dn=([^&]+)/.exec(u.search || url); return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : 'magnet link'; }
+    const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || '');
+    return last || u.hostname;
+  } catch { return url; }
+}
+
+export function kindLabel(job) {
+  if (job.kind === 'video') return 'video' + (job.quality && job.quality !== 'best' ? ' · ' + (job.quality === 'audio' ? 'audio' : job.quality + 'p') : '');
+  if (job.kind === 'torrent') return 'torrent';
+  if (job.kind === 'ftp') return 'ftp';
+  if (job.kind === 'gallery') return 'gallery';
+  return null;
+}

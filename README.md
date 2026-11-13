@@ -29,6 +29,50 @@ Built with Electron, Node.js and React. Everything in the stack is free and open
   from clipboard, quit). It can start with Windows, minimized to the tray.
 - **Desktop notifications** when a download finishes.
 
+### Added for parity with Mister Download Manager (v0.2)
+
+Reimplemented from MDM's documented behaviour (MDM itself is GPL-3.0 and written in Rust, so
+no code was copied; SwiftFetch stays MIT). See [ROADMAP.md](ROADMAP.md) for what is still open.
+
+- **Batch download.** `https://host/img*.jpg` with a number or letter range and zero padding.
+  Pasting a plain URL suggests the wildcard from its last digit run.
+- **Link grabber.** Paste text, HTML, Markdown or an IDM `.ef2` export, grab every link on a page,
+  import a `.txt`/`.ef2` list, or right-click a page in the browser -> *Download all links* /
+  *Download selected links*. Links are grouped into packages (archive volumes, hosts, magnets),
+  checked online (size, web page, offline, login needed), ticked and started or queued.
+- **Named queues and scheduler.** Main and Synchronization queues plus your own, each with its
+  own concurrency, start time (daily on chosen days, or once), stop time, start-on-launch,
+  retry count, and a *when done* action: exit, sleep, hibernate, shut down or open a file, with
+  a 30 s cancellable countdown. *Download later* in any Add dialog puts the file in a queue.
+- **Download limits.** At most N MB every H hours; downloads wait and resume on their own.
+- **Properties per download.** Description, refresh an expired address and continue, move or
+  rename the finished file, set or verify a checksum (MD5, SHA-1, SHA-256, SHA-512, CRC32),
+  extract an archive (with password), redownload, export as `.ef2`.
+- **Duplicate links.** Ask, number, resume/open, or overwrite, globally or per add.
+- **Archives.** Optional automatic extraction when a download finishes: ZIP built in, 7z/RAR/TAR
+  through 7-Zip when it is installed; extract into a folder named after the archive; move the
+  archive to the Recycle Bin afterwards.
+- **Torrents.** Magnet links and `.torrent` files through WebTorrent: metadata lookup, pick the
+  files, sequential mode for playback while downloading, seeding until a share ratio or time
+  limit, per-direction speed limits. Magnets copied to the clipboard open the torrent dialog.
+- **FTP / FTPS** with resume, passive mode, and saved logins.
+- **Google Drive links** (`file/d/...`, `uc?id=`, Docs/Sheets/Slides exports, large-file virus-scan
+  confirmation) resolve to the real file when the download starts.
+- **Premium link accounts.** Real-Debrid, AllDebrid, Premiumize and TorBox: add your own API
+  key and links to hosts they support are unrestricted automatically.
+- **Proxy and site logins.** None, system (Windows Internet Settings) or manual HTTP/SOCKS proxy,
+  with local bypass; per-host HTTP Basic logins. Both also apply to yt-dlp and gallery-dl.
+- **Galleries** through gallery-dl (installed on demand): whole albums from Imgur, Flickr,
+  DeviantArt, Reddit, Pixiv and many more.
+- **Mark of the Web.** Finished files get the `Zone.Identifier` stream so SmartScreen treats
+  them like browser downloads (can be turned off).
+- **Clipboard monitor.** Copy a link to a file type you care about and SwiftFetch offers it.
+- **Command line.** `swiftfetch.cmd URL`, IDM-style `/d URL /p folder /f name /a`, or drop a
+  `.torrent`, `.txt` or `.ef2` file on the shortcut; a second instance forwards to the running app.
+- **Interface.** Light/dark/system theme, interface size, sort and find, multi-select with
+  Shift/Ctrl, right-click menu, category and queue views in the sidebar, completion and failure
+  sounds (system beep or your own `.wav`), tray menu with start/stop queue.
+
 ## Run from source
 
 ```bash
@@ -126,7 +170,18 @@ electron/
   engine/categories.js Category detection and folder routing
   engine/cookies.js    Netscape cookie files for yt-dlp, one per job
   engine/ytdlp.js      yt-dlp/Deno/ffmpeg installer, probe, and video job runner
-  bridge/server.js     Loopback HTTP API for the extension
+  engine/scheduler.js  Named queues, schedules, download limits, when-done actions
+  engine/links.js      Link extraction, batch patterns, packages, online lookup, .ef2 export
+  engine/torrents.js   WebTorrent client: lookup, file selection, seeding limits
+  engine/ftp.js        FTP/FTPS probe and resumable download (basic-ftp)
+  engine/gdrive.js     Google Drive / Docs link resolver
+  engine/debrid.js     Real-Debrid, AllDebrid, Premiumize, TorBox unrestrict
+  engine/netctx.js     Proxy agents and saved site logins
+  engine/archives.js   ZIP (adm-zip) and 7-Zip extraction
+  engine/checksum.js   MD5 / SHA / CRC32 verification
+  engine/motw.js       Zone.Identifier (Mark of the Web)
+  engine/gallerydl.js  gallery-dl installer and job runner
+  bridge/server.js     Loopback HTTP API for the extension (/add, /probe, /import, /links)
 src/                   React renderer
 extension/             Manifest V3 extension for Chrome / Edge
 scripts/dev.js         Dev runner (Vite + Electron)
@@ -135,18 +190,25 @@ scripts/make-shortcut.js Desktop / Start Menu shortcuts
 swiftfetch.cmd         Launches the app from a shell
 ```
 
+## Dependency notes
+
+- `webtorrent` 2.x calls `arr2hex()` on the info hash string that `parse-torrent` returns; `uint8-util`
+  2.3.x made that throw, which breaks every magnet and `.torrent` add. `package.json` therefore pins
+  `uint8-util` to 2.2.6 through npm `overrides`. Remove the pin once WebTorrent handles 2.3.
+- `https-proxy-agent` and `socks-proxy-agent` stay on their CommonJS majors (7 and 8): the newer ones
+  are ESM-only and Electron 33's Node runtime cannot `require()` them.
+
 ## Where data lives
 
 - Settings and the job list: `%APPDATA%\swiftfetch\settings.json` and `jobs.json`
 - In-flight downloads: `<target>.sfdownload` (data) and `<target>.sfpart` (resume state)
-- yt-dlp, Deno and ffmpeg binaries: `%APPDATA%\swiftfetch\bin\`
+- yt-dlp, Deno, ffmpeg and gallery-dl binaries: `%APPDATA%\swiftfetch\bin\`
+- Torrent data is downloaded straight into the target folder; the `.torrent` metadata is kept in `jobs.json` for re-seeding
 
-## Roadmap ideas
+## Roadmap
 
-- Dynamic segment splitting (steal the remaining range of a slow segment)
-- Playlist and channel downloads
-- Scheduler (start queue at a given time), per-category folders
-- Firefox extension (the background script already uses only MV3 APIs Firefox supports)
+See [ROADMAP.md](ROADMAP.md): the remaining Mister Download Manager features (remote control,
+MCP server, server mode, translations, portable mode...) and SwiftFetch's own ideas.
 
 ## License
 

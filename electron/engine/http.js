@@ -6,6 +6,13 @@ const { URL } = require('url');
 const MAX_REDIRECTS = 10;
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) SwiftFetch/0.1';
 
+// Proxy and per-site logins live in netctx; required lazily to avoid a cycle at load time.
+let netctx = null;
+function ctx() {
+  if (!netctx) { try { netctx = require('./netctx'); } catch { netctx = { agentFor: () => undefined, authHeader: () => null }; } }
+  return netctx;
+}
+
 /**
  * Issue an HTTP(S) request, following redirects. Resolves with the IncomingMessage.
  * The caller is responsible for consuming or destroying the response.
@@ -18,10 +25,17 @@ function request(url, { method = 'GET', headers = {}, signal, timeout = 30000 } 
       return reject(new Error('Unsupported protocol: ' + u.protocol));
     }
     const lib = u.protocol === 'https:' ? https : http;
+    const finalHeaders = { 'User-Agent': DEFAULT_UA, 'Accept': '*/*', 'Accept-Encoding': 'identity', ...headers };
+    // A login in the URL (user:pass@host) or a saved site login becomes Basic auth.
+    if (!finalHeaders.Authorization && !finalHeaders.authorization) {
+      if (u.username) finalHeaders.Authorization = 'Basic ' + Buffer.from(decodeURIComponent(u.username) + ':' + decodeURIComponent(u.password || '')).toString('base64');
+      else { const a = ctx().authHeader(u.toString()); if (a) finalHeaders.Authorization = a; }
+    }
     const req = lib.request(u, {
       method,
-      headers: { 'User-Agent': DEFAULT_UA, 'Accept': '*/*', 'Accept-Encoding': 'identity', ...headers },
+      headers: finalHeaders,
       signal,
+      agent: ctx().agentFor(u.toString()),
     }, (res) => {
       const status = res.statusCode;
       if ([301, 302, 303, 307, 308].includes(status) && res.headers.location) {
@@ -104,4 +118,4 @@ async function probe(url, headers = {}, signal) {
   return { url, finalUrl: res.finalUrl, size, resumable, filename, contentType };
 }
 
-module.exports = { request, probe, sanitizeFilename, filenameFromUrl, DEFAULT_UA };
+module.exports = { request, probe, sanitizeFilename, filenameFromUrl, parseContentDisposition, DEFAULT_UA };
